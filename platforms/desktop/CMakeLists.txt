@@ -98,3 +98,12 @@ target_link_libraries(microreader_desktop PRIVATE
 )
 # Prevent SDL_main.h from renaming main() so we keep a plain console entry point.
 target_compile_definitions(microreader_desktop PRIVATE SDL_MAIN_HANDLED)
+# Generate a header with the repo-root sd/ path (avoids MSVC /D drive-letter colon issue).
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+set(MICROREADER_SD_DIR "${REPO_ROOT}/sd")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/desktop_config.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/desktop_config.h
+    @ONLY
+)
+target_include_directories(microreader_desktop PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

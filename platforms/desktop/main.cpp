@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 
+#include "desktop_config.h"
 #include "display.h"
 #include "input.h"
 #include "microreader/Application.h"
@@ -41,7 +42,7 @@ class DesktopFontManager : public microreader::FontManager {
     if (custom_font == currently_loaded_path_ && font_set_.valid())
       return;  // already loaded
 
-    static const std::string fonts_dir = std::filesystem::absolute("sd/fonts").string();
+    static const std::string fonts_dir = (std::filesystem::path(MICROREADER_SD_DIR) / "fonts").string();
 
     std::string path = custom_font;
     if (path.empty()) {
@@ -98,14 +99,15 @@ int main() {
     microreader::Application app;
     microreader::DrawBuffer buf(display);
 
-    // Mount sd/ as the virtual SD card books directory.
-    static std::string books_path = std::filesystem::absolute("sd").string();
+    // Mount the repo-root sd/ folder as the virtual SD card.
+    // MICROREADER_SD_DIR is set by CMake via desktop_config.h.
+    static std::string books_path = std::filesystem::absolute(MICROREADER_SD_DIR).string();
     std::filesystem::create_directories(books_path);
     std::filesystem::create_directories(books_path + "/fonts");
     app.set_books_dir(books_path.c_str());
 
     // Data directory for converted books, settings, reading state.
-    static std::string data_path = std::filesystem::absolute("sd/.microreader").string();
+    static std::string data_path = (std::filesystem::absolute(MICROREADER_SD_DIR) / ".microreader").string();
     std::filesystem::create_directories(data_path + "/cache");
     std::filesystem::create_directories(data_path + "/data");
     app.set_data_dir(data_path.c_str());

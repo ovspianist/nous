@@ -34,6 +34,7 @@ resources/             Fonts, sleep images
 ```powershell
 cmake -S platforms/desktop -B build/desktop-debug -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5"
 cmake --build build/desktop-debug --config Debug
+.\build\desktop-debug\Debug\microreader_desktop.exe
 ```
 
 ### ESP32 (PlatformIO)
