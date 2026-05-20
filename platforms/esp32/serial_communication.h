@@ -70,7 +70,16 @@ volatile uint8_t g_serial_buttons = 0;
 // Single-slot command queue: only one path command can be pending at a time.
 // The serial receiver task writes path then sets type as the commit signal.
 // The main loop reads type, dispatches, then clears to None.
-enum class SerialCmdType : uint8_t { None = 0, Open, Bench, ImgBench, ImgDecode, FlashBench, InvalidateFont };
+enum class SerialCmdType : uint8_t {
+  None = 0,
+  Open,
+  Bench,
+  ImgBench,
+  ImgDecode,
+  FlashBench,
+  InvalidateFont,
+  RenderBench
+};
 static char g_cmd_path[256];
 static volatile SerialCmdType g_cmd_type = SerialCmdType::None;
 
@@ -601,6 +610,12 @@ static void handle_serial_cmd() {
     case 'F': {
       g_cmd_type = SerialCmdType::InvalidateFont;
       serial_write("FONT_INVALIDATED\n");
+      break;
+    }
+    case 'P': {
+      // Render benchmark on the currently open page (no path argument).
+      g_cmd_type = SerialCmdType::RenderBench;
+      serial_write("OK\n");
       break;
     }
     default:

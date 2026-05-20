@@ -30,10 +30,16 @@ static int compare_pattern_segment(const std::uint8_t* pat, int patlen, const ch
   return 0;
 }
 
-static int find_pattern_index(const char* seg, int seglen, const HyphenationPatterns& pats) {
+static int find_pattern_index(const char* seg, int seglen, const HyphenationPatterns& pats,
+                              const HyphenationCharIndex* cidx) {
   if (pats.count == 0)
     return -1;
   int lo = 0, hi = (int)pats.count - 1;
+  if (cidx && (unsigned char)seg[0] < 128) {
+    unsigned char c = (unsigned char)seg[0];
+    lo = cidx->start[c];
+    hi = (int)cidx->end[c] - 1;
+  }
   while (lo <= hi) {
     int mid = (lo + hi) >> 1;
     int cmp = compare_pattern_segment(pats.patterns[mid].letters, pats.patterns[mid].letters_len, seg, seglen);
@@ -48,7 +54,7 @@ static int find_pattern_index(const char* seg, int seglen, const HyphenationPatt
 }
 
 static int liang_hyphenate(const char* word, size_t leftmin, size_t rightmin, char boundary_char, size_t* out_positions,
-                           int max_positions, const HyphenationPatterns& pats) {
+                           int max_positions, const HyphenationPatterns& pats, const HyphenationCharIndex* cidx) {
   if (!word)
     return 0;
   int word_len = (int)std::strlen(word);
@@ -70,7 +76,7 @@ static int liang_hyphenate(const char* word, size_t leftmin, size_t rightmin, ch
   for (int i = 0; i < M; ++i) {
     for (int j = i + 1; j <= M; ++j) {
       int len = j - i;
-      int idx = find_pattern_index(ext + i, len, pats);
+      int idx = find_pattern_index(ext + i, len, pats, cidx);
       if (idx >= 0) {
         const uint8_t* vals = pats.patterns[idx].values;
         int vlen = pats.patterns[idx].values_len;
@@ -106,7 +112,8 @@ int hyphenate_word(const char* word, size_t /*len*/, HyphenationLang lang, size_
   if (lang == HyphenationLang::None)
     return 0;
   const HyphenationPatterns& pats = (lang == HyphenationLang::German) ? de_patterns : en_us_patterns;
-  return liang_hyphenate(word, 2, 2, '.', out_positions, max_positions, pats);
+  const HyphenationCharIndex* cidx = (lang == HyphenationLang::German) ? &de_char_idx : &en_us_char_idx;
+  return liang_hyphenate(word, 2, 2, '.', out_positions, max_positions, pats, cidx);
 }
 
 size_t find_hyphen_break(const IFont& font, const char* word_ptr, size_t len, FontStyle style, uint8_t size_pct,

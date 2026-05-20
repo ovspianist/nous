@@ -32,9 +32,11 @@ Interactive commands:
     bench <book>      Run full EPUB conversion benchmark for a book
     imgsize <book>    Run image format+size benchmark for a book
     imgdecode <book>  Fully decode every image in a book (streaming decoder test)
+    renderbench       Benchmark render_page_ on the currently open page (20 iterations)
     help              Show this help
     quit / exit       Exit
 """
+
 import argparse
 import struct
 import sys
@@ -89,6 +91,13 @@ def send_imgdecode(ser: serial.Serial, path: str) -> str:
 
 def send_flashbench(ser: serial.Serial) -> str:
     ser.write(MAGIC + b"G")
+    return read_response(ser, timeout=5.0)
+
+
+def send_renderbench(ser: serial.Serial, iterations: int = 20) -> str:
+    """Send 'P' command to benchmark render_page_ on the currently open page.
+    Returns the initial OK/ERR, then streams per-iteration and summary lines."""
+    ser.write(MAGIC + b"P")
     return read_response(ser, timeout=5.0)
 
 
@@ -203,9 +212,11 @@ def upload_file(ser: serial.Serial, filepath: Path, magic: bytes) -> bool:
     print("Timeout waiting for result")
     return False
 
+
 def upload_epub(ser: serial.Serial, filepath: Path) -> bool:
     """Upload an EPUB file to the device over the existing serial connection."""
     return upload_file(ser, filepath, b"EPUB")
+
 
 def upload_sleep(ser: serial.Serial, filepath: Path) -> bool:
     """Upload a sleep image file to the device over the existing serial connection."""
@@ -215,6 +226,7 @@ def upload_sleep(ser: serial.Serial, filepath: Path) -> bool:
 def upload_font_sd(ser: serial.Serial, filepath: Path) -> bool:
     """Upload an MBF font file to the device's SD card over the existing serial connection."""
     return upload_file(ser, filepath, b"SDFN")
+
 
 def drain(ser: serial.Serial):
     """Drain any pending serial data."""
@@ -318,6 +330,7 @@ def send_remove_file(ser: serial.Serial, path: str) -> str:
     ser.write(MAGIC + b"R" + struct.pack("<H", len(path_bytes)) + path_bytes)
     return read_response(ser, timeout=10.0)
 
+
 def send_clear_mrb(ser: serial.Serial) -> str:
     """Send 'C' command to delete all .mrb files. Returns 'CLEARED:N' or error."""
     drain(ser)
@@ -331,6 +344,7 @@ def send_clear_mrb(ser: serial.Serial) -> str:
             return line
     return "TIMEOUT"
 
+
 def send_clear_sleep(ser: serial.Serial) -> str:
     """Send 'Z' command to delete all sleep images. Returns 'CLEARED_SLEEP:N' or error."""
     drain(ser)
@@ -343,6 +357,7 @@ def send_clear_sleep(ser: serial.Serial) -> str:
         if line.startswith("CLEARED_SLEEP:") or line.startswith("ERR:"):
             return line
     return "TIMEOUT"
+
 
 def send_clear_sd_fonts(ser: serial.Serial) -> str:
     """Send 'Y' command to delete all SD fonts. Returns 'CLEARED_SDFONTS:N' or error."""
@@ -591,6 +606,12 @@ def main():
         default=False,
         help="Non-interactive: run conversion benchmark on every .epub on the device",
     )
+    parser.add_argument(
+        "--renderbench",
+        action="store_true",
+        default=False,
+        help="Non-interactive: benchmark render_page_ on the currently open page (20 iterations)",
+    )
     args = parser.parse_args()
 
     try:
@@ -658,6 +679,31 @@ def main():
         print(result)
         ser.close()
         sys.exit(0 if result.startswith("FONT_INVALIDATED") else 1)
+
+    if args.renderbench:
+        # --- Render benchmark mode ---
+        timeout = args.timeout
+        print(f"Sending renderbench (timeout={timeout}s) ...")
+        resp = send_renderbench(ser)
+        print(resp)
+        if not resp.startswith("OK"):
+            ser.close()
+            sys.exit(1)
+        done_marker = "RENDER_BENCH:"
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            line = ser.readline().decode("utf-8", errors="replace").rstrip("\r\n")
+            if not line:
+                continue
+            print(line)
+            sys.stdout.flush()
+            if done_marker in line:
+                print("--- Done ---")
+                break
+        else:
+            print("--- Timeout ---")
+        ser.close()
+        return
 
     if args.bench:
         # --- Benchmark mode ---
@@ -1081,8 +1127,26 @@ def main():
                 resp = send_flashbench(ser)
                 print(resp)
                 if resp.startswith("OK"):
-                    print("Flash benchmark running — watch serial output for FLASH_BENCH lines.")
+                    print(
+                        "Flash benchmark running — watch serial output for FLASH_BENCH lines."
+                    )
                     print("Done when: '=== FLASH BENCH DONE' appears in the log.")
+            elif verb in ("renderbench", "rb"):
+                print("Sending render benchmark ...")
+                resp = send_renderbench(ser)
+                print(resp)
+                if resp.startswith("OK"):
+                    done_marker = "RENDER_BENCH:"
+                    deadline = time.time() + 60.0
+                    while time.time() < deadline:
+                        line = ser.readline().decode("utf-8", errors="replace").strip()
+                        if not line:
+                            continue
+                        print(line)
+                        if done_marker in line:
+                            break
+                    else:
+                        print("(timeout waiting for RENDER_BENCH: summary)")
             else:
                 print(f"Unknown command: {verb!r}. Type 'help' for commands.")
     except KeyboardInterrupt:

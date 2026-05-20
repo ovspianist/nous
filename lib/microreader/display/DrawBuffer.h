@@ -654,28 +654,68 @@ class DrawBuffer {
     const int gy = y + y_offset;
     const int row_stride = (bitmap_width + 7) / 8;
 
-    for (int row = 0; row < bitmap_height; ++row) {
-      const int ly = gy + row;
-      const uint8_t* row_data = bits + row * row_stride;
-      for (int col = 0; col < bitmap_width; ++col) {
-        const int lx = gx + col;
-        const bool bit_set = (row_data[col >> 3] >> (7 - (col & 7))) & 1;
-        if (invert_select ? bit_set : !bit_set) {
-          // Ink pixel - compute absolute physical coords.
-          const int px = (rotation == Rotation::Deg0) ? lx : ly;
-          const int py = (rotation == Rotation::Deg0) ? ly : DisplayFrame::kPhysicalHeight - 1 - lx;
-          if (px < t.phys_x0 || px >= t.phys_x0 + t.phys_w)
-            continue;
-          if (py < t.phys_y0 || py >= t.phys_y0 + t.phys_h)
-            continue;
-          const int lpx = px - t.phys_x0;  // local pixel X within target
-          const int lpy = py - t.phys_y0;  // local pixel Y within target
-          const size_t bidx = static_cast<size_t>(lpy * t.stride + lpx / 8);
-          const uint8_t bit = static_cast<uint8_t>(0x80u >> (lpx & 7));
-          if (white)
-            t.buf[bidx] |= bit;
-          else
-            t.buf[bidx] &= static_cast<uint8_t>(~bit);
+    if (rotation == Rotation::Deg90) {
+      // Optimized path for portrait (Deg90) — the common case.
+      //
+      // Physical mapping: px = ly = gy+row (constant per row)
+      //                   py = kPhysicalHeight-1 - lx = kPhysicalHeight-1 - gx - col
+      //
+      // Per row: hoisted constants eliminate all per-pixel multiplies and
+      // 4 bounds comparisons, reducing inner loop to ~3 ops/pixel.
+      const int lpy_base = DisplayFrame::kPhysicalHeight - 1 - gx - t.phys_y0;
+      // col range where py is in-bounds: lpy_base - col must be in [0, t.phys_h)
+      const int col_lo_clip = lpy_base - (t.phys_h - 1);  // col >= this
+      const int col_hi_clip = lpy_base;                   // col <= this
+      for (int row = 0; row < bitmap_height; ++row) {
+        const int ly = gy + row;
+        // px = ly: check x-bounds once per row, skip entire row if out.
+        if (ly < t.phys_x0 || ly >= t.phys_x0 + t.phys_w)
+          continue;
+        const int lpx = ly - t.phys_x0;
+        const uint8_t bit_mask = static_cast<uint8_t>(0x80u >> (lpx & 7));
+        const int byte_col = lpx >> 3;
+        // Clamp column range to both bitmap width and y-bounds.
+        const int col_start = col_lo_clip > 0 ? col_lo_clip : 0;
+        const int col_end = col_hi_clip < bitmap_width - 1 ? col_hi_clip + 1 : bitmap_width;
+        if (col_start >= col_end)
+          continue;
+        const uint8_t* row_data = bits + row * row_stride;
+        // Starting bidx: lpy = lpy_base - col_start
+        size_t bidx = static_cast<size_t>((lpy_base - col_start) * t.stride + byte_col);
+        for (int col = col_start; col < col_end; ++col, bidx -= t.stride) {
+          const bool bit_set = (row_data[col >> 3] >> (7 - (col & 7))) & 1;
+          if (invert_select ? bit_set : !bit_set) {
+            if (white)
+              t.buf[bidx] |= bit_mask;
+            else
+              t.buf[bidx] &= static_cast<uint8_t>(~bit_mask);
+          }
+        }
+      }
+    } else {
+      // Deg0 (landscape) — general path.
+      for (int row = 0; row < bitmap_height; ++row) {
+        const int ly = gy + row;
+        const uint8_t* row_data = bits + row * row_stride;
+        for (int col = 0; col < bitmap_width; ++col) {
+          const int lx = gx + col;
+          const bool bit_set = (row_data[col >> 3] >> (7 - (col & 7))) & 1;
+          if (invert_select ? bit_set : !bit_set) {
+            const int px = lx;
+            const int py = ly;
+            if (px < t.phys_x0 || px >= t.phys_x0 + t.phys_w)
+              continue;
+            if (py < t.phys_y0 || py >= t.phys_y0 + t.phys_h)
+              continue;
+            const int lpx = px - t.phys_x0;
+            const int lpy = py - t.phys_y0;
+            const size_t bidx = static_cast<size_t>(lpy * t.stride + lpx / 8);
+            const uint8_t bit = static_cast<uint8_t>(0x80u >> (lpx & 7));
+            if (white)
+              t.buf[bidx] |= bit;
+            else
+              t.buf[bidx] &= static_cast<uint8_t>(~bit);
+          }
         }
       }
     }

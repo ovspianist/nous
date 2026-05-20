@@ -150,6 +150,13 @@ struct PageOptions {
         padding_left(pad),
         para_spacing(ps),
         align_override(a) {}
+
+  bool operator==(const PageOptions& o) const {
+    return width == o.width && height == o.height && padding_top == o.padding_top && padding_right == o.padding_right &&
+           padding_bottom == o.padding_bottom && padding_left == o.padding_left && para_spacing == o.para_spacing &&
+           line_height_multiplier_percent == o.line_height_multiplier_percent && align_override == o.align_override &&
+           center_text == o.center_text && override_publisher_fonts == o.override_publisher_fonts;
+  }
 };
 
 // Optional callback for resolving image dimensions lazily at layout time.
@@ -194,12 +201,16 @@ class TextLayout {
 
   // Replace the font (e.g. after a proportional font becomes available).
   void set_font(IFont& font) {
+    if (font_ == &font)
+      return;
     font_ = &font;
     cache_valid_ = false;
   }
 
   // Replace options (e.g. after a screen resize).
   void set_options(const PageOptions& opts) {
+    if (opts_ == opts)
+      return;
     opts_ = opts;
     cache_valid_ = false;
   }
@@ -328,7 +339,7 @@ class TextLayout {
   PagePosition position_;
   HyphenationLang hyphenation_lang_ = HyphenationLang::None;
 
-  static constexpr size_t kCacheCapacity = 8;
+  static constexpr size_t kCacheCapacity = 16;
   mutable std::array<LaidOutParagraph, kCacheCapacity> para_cache_{};
   mutable size_t cache_next_ = 0;
   mutable bool cache_valid_ = false;

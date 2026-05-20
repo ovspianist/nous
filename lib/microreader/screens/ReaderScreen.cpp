@@ -592,8 +592,14 @@ void ReaderScreen::render_page_(DrawBuffer& buf) {
   page_pos_ = layout_engine_.resolve_stable_position(page_pos_);
   layout_engine_.set_position(page_pos_);
 
+#ifdef ESP_PLATFORM
+  int64_t t_layout = esp_timer_get_time();
+#endif
   page_ = layout_engine_.layout();
   collect_page_links_();
+#ifdef ESP_PLATFORM
+  long layout_us = (long)(esp_timer_get_time() - t_layout);
+#endif
   // ─────────────────────────────────
   struct ImageToDraw {
     uint16_t key;
@@ -639,6 +645,9 @@ void ReaderScreen::render_page_(DrawBuffer& buf) {
 
   // ── BW rendering
   // ────────────────────────────────────────────────────────
+#ifdef ESP_PLATFORM
+  int64_t t_draw = esp_timer_get_time();
+#endif
   buf.fill(true);
 
   if (fset) {
@@ -689,8 +698,9 @@ void ReaderScreen::render_page_(DrawBuffer& buf) {
 
 #ifdef ESP_PLATFORM
   long render_us = (long)(esp_timer_get_time() - t0);
-  ESP_LOGI("perf", "render_page: %ldus (%ld.%ldms) words=%d images=%d", render_us, render_us / 1000,
-           (render_us % 1000) / 100, n_words, (int)images.size());
+  long draw_us = (long)(esp_timer_get_time() - t_draw);
+  ESP_LOGI("perf", "render_page: %ldms total (layout=%ldms draw=%ldms) words=%d images=%d", render_us / 1000,
+           layout_us / 1000, draw_us / 1000, n_words, (int)images.size());
 #endif
 }
 
@@ -786,6 +796,47 @@ bool ReaderScreen::next_page_and_render(DrawBuffer& buf) {
 
 bool ReaderScreen::is_open_ok() const {
   return open_ok_;
+}
+
+void ReaderScreen::bench_render(DrawBuffer& buf, int iterations) {
+#ifdef ESP_PLATFORM
+  if (!open_ok_) {
+    ESP_LOGW("bench", "bench_render: no book open");
+    return;
+  }
+  // Navigate to the start of the book.
+  load_chapter_(0);
+  page_pos_ = PagePosition{0, 0};
+
+  const int n = (iterations > 200) ? 200 : (iterations < 1 ? 1 : iterations);
+  long total_ms = 0;
+  long min_ms = INT32_MAX, max_ms = 0;
+  int pages_done = 0;
+
+  for (int i = 0; i < n; ++i) {
+    int64_t t0 = esp_timer_get_time();
+    render_page_(buf);
+    long ms = (long)((esp_timer_get_time() - t0) / 1000);
+    int word_count = 0;
+    for (const auto& ci : page_.items)
+      if (const PageTextItem* ti = std::get_if<PageTextItem>(&ci))
+        word_count += (int)ti->line.words.size();
+    ESP_LOGI("bench", "page[%d/%d]: %ldms words=%d", i + 1, n, ms, word_count);
+    total_ms += ms;
+    if (ms < min_ms)
+      min_ms = ms;
+    if (ms > max_ms)
+      max_ms = ms;
+    ++pages_done;
+    if (page_.at_chapter_end && chapter_idx_ + 1 >= mrb_.chapter_count())
+      break;
+    next_page_();
+  }
+
+  long avg_ms = pages_done > 0 ? total_ms / pages_done : 0;
+  ESP_LOGI("bench", "RENDER_BENCH:pages=%d,min=%ldms,max=%ldms,avg=%ldms,total=%ldms", pages_done, min_ms, max_ms,
+           avg_ms, total_ms);
+#endif
 }
 
 size_t ReaderScreen::current_chapter_index() const {

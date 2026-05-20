@@ -52,6 +52,10 @@ class ReaderScreen final : public IScreen {
   bool render_current_page(DrawBuffer& buf);
   bool next_page_and_render(DrawBuffer& buf);
   bool is_open_ok() const;
+
+  // Render benchmark: calls render_page_ `iterations` times on the current page
+  // and logs timing stats (per-iteration + summary). ESP32-only; no-op on desktop.
+  void bench_render(DrawBuffer& buf, int iterations = 100);
   size_t current_chapter_index() const;
 
   // Test accessors — expose internal state so tests can drive the real screen

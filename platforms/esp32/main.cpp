@@ -5,9 +5,11 @@
 #include "driver/usb_serial_jtag.h"
 #include "epd.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "font_manager.h"
 #include "input.h"
 #include "microreader/Application.h"
@@ -229,6 +231,10 @@ extern "C" void app_main(void) {
         case SerialCmdType::InvalidateFont: {
           app.set_installed_font_path("");
           app.invalidate_font();
+          break;
+        }
+        case SerialCmdType::RenderBench: {
+          app.reader()->bench_render(buf);
           break;
         }
         default:

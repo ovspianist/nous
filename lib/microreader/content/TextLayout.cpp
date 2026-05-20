@@ -6,6 +6,12 @@
 
 #include "hyphenation/Hyphenation.h"
 
+#ifdef ESP_PLATFORM
+#include "esp_timer.h"
+int64_t g_layout_hyph_us = 0;
+int64_t g_layout_metrics_us = 0;
+#endif
+
 // Set to 1 to print a step-by-step trace of forward + backward page collection.
 // Output goes to stdout; safe to enable in desktop builds while debugging.
 #ifndef MR_LAYOUT_TRACE
@@ -315,7 +321,13 @@ static std::vector<LayoutLine> layout_para_lines(const IFont& font, const Layout
       // Loop handles multi-line hyphenation: each iteration places a chunk or
       // emits a hyphenated prefix and continues with the remaining suffix.
       while (true) {
+#ifdef ESP_PLATFORM
+        int64_t _tm = esp_timer_get_time();
         uint16_t word_w = font.word_width(word_ptr, word_len, run.style, eff_size_pct);
+        g_layout_metrics_us += esp_timer_get_time() - _tm;
+#else
+        uint16_t word_w = font.word_width(word_ptr, word_len, run.style, eff_size_pct);
+#endif
         uint16_t needed = word_w + (needs_space ? space_width : 0);
 
         if (current.words.empty()) {
@@ -336,11 +348,24 @@ static std::vector<LayoutLine> layout_para_lines(const IFont& font, const Layout
         uint16_t avail =
             line_width > x + (needs_space ? space_width : 0) ? line_width - x - (needs_space ? space_width : 0) : 0;
         bool prefix_has_hyphen = false;
-        size_t split =
+#ifdef ESP_PLATFORM
+        { int64_t _th = esp_timer_get_time();
+          size_t split_tmp = find_hyphen_break(font, word_ptr, word_len, run.style, eff_size_pct, hyph_lang, avail, prefix_has_hyphen);
+          g_layout_hyph_us += esp_timer_get_time() - _th;
+          const size_t split = split_tmp;
+#else
+        { const size_t split =
             find_hyphen_break(font, word_ptr, word_len, run.style, eff_size_pct, hyph_lang, avail, prefix_has_hyphen);
+#endif
         if (split > 0) {
           // Emit prefix + hyphen, flush, then loop with the suffix.
+#ifdef ESP_PLATFORM
+          int64_t _tm2 = esp_timer_get_time();
           const uint16_t prefix_w = font.word_width(word_ptr, static_cast<uint16_t>(split), run.style, eff_size_pct);
+          g_layout_metrics_us += esp_timer_get_time() - _tm2;
+#else
+          const uint16_t prefix_w = font.word_width(word_ptr, static_cast<uint16_t>(split), run.style, eff_size_pct);
+#endif
           // Don't add a synthetic hyphen if the prefix already ends with one.
           const uint16_t hyphen_w = prefix_has_hyphen ? 0 : font.char_width('-', run.style, eff_size_pct);
           if (needs_space)
@@ -365,6 +390,7 @@ static std::vector<LayoutLine> layout_para_lines(const IFont& font, const Layout
           needs_space = false;
           continue;
         }
+        } // end split block
         if (current.words.empty()) {
           // No hyphenation and line is empty — force placement to avoid infinite loop.
           current.words.push_back(
