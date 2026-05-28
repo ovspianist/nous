@@ -92,6 +92,7 @@ static constexpr uint8_t kMrbAlignDefault = 0xFF;
 static constexpr int16_t kMrbIndentNone = 0x7FFF;
 static constexpr uint16_t kMrbSpacingDefault = 0xFFFF;
 static constexpr uint16_t kMrbNoImage = 0xFFFF;
+static constexpr uint8_t kMrbHrWidthDefault = 0xFF;
 
 // ---------------------------------------------------------------------------
 // Little-endian serialization helpers

@@ -185,11 +185,12 @@ bool MrbWriter::write_paragraph(const Paragraph& para) {
       break;
     }
     case ParagraphType::Hr: {
-      uint8_t buf[7];
+      uint8_t buf[8];
       buf[0] = kMrbParaHr;
-      mrb_write_u32(buf + 1, 2);
+      mrb_write_u32(buf + 1, 3);
       mrb_write_u16(buf + 5, para.spacing_before.value_or(kMrbSpacingDefault));
-      if (!write_bytes(buf, 7))
+      buf[7] = para.hr_width_pct.value_or(kMrbHrWidthDefault);
+      if (!write_bytes(buf, 8))
         return false;
       break;
     }

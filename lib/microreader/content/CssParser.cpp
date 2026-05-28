@@ -235,6 +235,17 @@ CssRule CssRule::parse(const char* decl, size_t length, const CssConfig& config)
         else if (value.find("solid") != std::string::npos || value.find("dashed") != std::string::npos ||
                  value.find("dotted") != std::string::npos || value.find("double") != std::string::npos)
           rule.set_border_top(true);
+      } else if (key == "width") {
+        if (!value.empty() && value.back() == '%') {
+          char* end = nullptr;
+          float v = std::strtof(value.c_str(), &end);
+          if (end != value.c_str()) {
+            int pct = static_cast<int>(v + 0.5f);
+            if (pct < 0) pct = 0;
+            if (pct > 100) pct = 100;
+            rule.set_width_pct(static_cast<uint8_t>(pct));
+          }
+        }
       } else if (key == "page-break-before") {
         if (value == "always" || value == "left" || value == "right")
           rule.set_page_break_before(true);
@@ -449,6 +460,10 @@ CssRule CssRule::operator+(const CssRule& rhs) const {
     result.set_border_top(rhs.border_top);
   else if (has_border_top_)
     result.set_border_top(border_top);
+  if (rhs.has_width_pct_)
+    result.set_width_pct(rhs.width_pct);
+  else if (has_width_pct_)
+    result.set_width_pct(width_pct);
 
   return result;
 }

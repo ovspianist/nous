@@ -999,10 +999,12 @@ class BodyParser {
     pending_inline_image_ = ImageRef(key, w, h);
   }
 
-  void push_hr(std::optional<uint16_t> spacing_before = std::nullopt) {
+  void push_hr(std::optional<uint16_t> spacing_before = std::nullopt,
+                std::optional<uint8_t> width_pct = std::nullopt) {
     flush_run();
     auto p = Paragraph::make_hr();
     p.spacing_before = spacing_before;
+    p.hr_width_pct = width_pct;
     emit(std::move(p));
   }
 
@@ -1444,7 +1446,15 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
       }
 
       if (sv_eq(ev.name, "hr")) {
-        parser.push_hr();
+        std::optional<uint8_t> hr_width;
+        auto hr_style_sv = ev.attrs.get("style");
+        if (!hr_style_sv.empty()) {
+          auto hr_inline = CssRule::parse(hr_style_sv.data, hr_style_sv.length,
+                                            extern_css ? extern_css->config() : CssConfig{});
+          if (hr_inline.has_width_pct_)
+            hr_width = hr_inline.width_pct;
+        }
+        parser.push_hr(std::nullopt, hr_width);
         parser.depth++;  // balance synthetic EndElement for self-closing tag
         continue;
       }
@@ -1573,7 +1583,7 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
 
       // A block element with border-top acts as a decorative rule (like <hr>).
       if (style.has_border_top_ && style.border_top && is_block_element(ev.name) && !parser.cell_depth.has_value()) {
-        parser.push_hr(style.margin_top);
+        parser.push_hr(style.margin_top, style.has_width_pct_ ? std::optional<uint8_t>(style.width_pct) : std::nullopt);
         style.has_margin_top_ = false;
         ;  // consumed by Hr spacing_before; don't re-apply to pending_margin_top_
       }

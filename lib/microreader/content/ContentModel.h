@@ -107,6 +107,7 @@ struct Paragraph {
   TextParagraph text;                      // valid when type == Text
   ImageRef image;                          // valid when type == Image
   std::optional<uint16_t> spacing_before;  // override para_spacing if set
+  std::optional<uint8_t> hr_width_pct;    // HR width as percentage (0-100), nullopt = default (1/3)
 
   Paragraph() = default;
 

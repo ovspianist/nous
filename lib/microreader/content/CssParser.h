@@ -29,6 +29,7 @@ struct CssRule {
   uint16_t margin_right = 0;
   uint16_t margin_top = 0;
   uint16_t margin_bottom = 0;
+  uint8_t width_pct = 0;
 
   // Bitfield values
   Alignment alignment : 3;
@@ -64,6 +65,7 @@ struct CssRule {
   bool has_list_style_none_ : 1;
   bool has_font_variant_small_caps_ : 1;
   bool has_border_top_ : 1;
+  bool has_width_pct_ : 1;
 
   CssRule() {
     alignment = Alignment::Start;
@@ -98,6 +100,7 @@ struct CssRule {
     has_list_style_none_ = false;
     has_font_variant_small_caps_ = false;
     has_border_top_ = false;
+    has_width_pct_ = false;
   }
 
   // Provide minimal std::optional-like interface for getters
@@ -206,6 +209,9 @@ struct CssRule {
   OptUint16 margin_bottom_opt() const {
     return {has_margin_bottom_, margin_bottom};
   }
+  OptUint8 width_pct_opt() const {
+    return {has_width_pct_, width_pct};
+  }
 
   // Setters
   void set_alignment(Alignment v) {
@@ -255,6 +261,10 @@ struct CssRule {
   void set_border_top(bool v) {
     border_top = v;
     has_border_top_ = true;
+  }
+  void set_width_pct(uint8_t v) {
+    width_pct = v;
+    has_width_pct_ = true;
   }
 
   void set_indent(int16_t v) {

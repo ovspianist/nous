@@ -226,6 +226,11 @@ MrbReader::LoadResult MrbReader::load_paragraph(uint32_t file_offset, Paragraph&
         if (sp != kMrbSpacingDefault)
           out.spacing_before = sp;
       }
+      if (data_size >= 3) {
+        uint8_t w = mrb_read_u8(body.data() + 2);
+        if (w != kMrbHrWidthDefault)
+          out.hr_width_pct = w;
+      }
       result.ok = true;
       return result;
     }
