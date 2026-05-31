@@ -300,7 +300,8 @@ struct CssRule {
     return has_alignment_ || has_italic_ || has_bold_ || has_indent_ || has_font_size_pct_ || has_margin_left_ ||
            has_margin_right_ || has_margin_top_ || has_margin_bottom_ || has_is_float_ || has_is_hidden_ ||
            has_page_break_before_ || has_page_break_after_ || has_text_transform_ || has_vertical_align_ ||
-           has_line_height_pct_ || has_list_style_none_ || has_font_variant_small_caps_ || has_border_top_;
+           has_line_height_pct_ || has_list_style_none_ || has_font_variant_small_caps_ || has_border_top_ ||
+           has_width_pct_;
   }
 
   // Parse declarations like "text-align: center; font-weight: bold"

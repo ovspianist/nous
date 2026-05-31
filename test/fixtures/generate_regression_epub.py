@@ -211,6 +211,12 @@ STYLESHEET = """\
 .lh-normal    { line-height: normal; }
 .lh-loose     { line-height: 180%; }
 .lh-1_8       { line-height: 1.8; }
+
+/* --- HR width via class (ch11) --- */
+.hr-full      { width: 100%; }
+.hr-half      { width: 50%; }
+.hr-quarter   { width: 25%; }
+
 """
 
 
@@ -432,21 +438,56 @@ def ch_lists():
 
 
 def ch_hr():
-    """Chapter 11: Horizontal rules and page breaks."""
+    """Chapter 11: Horizontal rules — basic rendering and CSS width percentage."""
     return make_xhtml(
-        "HR and Page Breaks",
+        "Horizontal Rules",
         """\
 <h1>11. Horizontal Rules</h1>
+
+<h2>Basic HRs</h2>
 <p>Text before first HR.</p>
 <hr/>
 <p>Text between HRs.</p>
 <hr/>
-<p>Text after second HR.</p>
+<p>Text after second HR. Default HRs should be 1/3 content width, centered.</p>
+
+<h2>Border-top div as HR</h2>
 <p>Div with border-top acts as HR (as in animal.epub heading decorations):</p>
 <div style="border-top-style: solid; border-top-width: 1px; margin-top: 0.8em; margin-bottom: 0.8em;"> </div>
 <h2>Heading between border-top divs</h2>
 <div style="border-top-style: solid; border-top-width: 1px; margin-top: 0.8em; margin-bottom: 1em;"> </div>
 <p>Text after border-top div HR.</p>
+
+<h2>CSS width percentage (inline style)</h2>
+<p>width: 100% — full content width:</p>
+<hr style="width: 100%;"/>
+<p>width: 50% — half width, centered:</p>
+<hr style="width: 50%;"/>
+<p>width: 25% — quarter width, centered:</p>
+<hr style="width: 25%;"/>
+<p>width: 10% — narrow, centered:</p>
+<hr style="width: 10%;"/>
+
+<h2>Border-top div with width: 50%</h2>
+<p>The decorative rule below should be 50% wide, centered:</p>
+<div style="border-top-style: solid; border-top-width: 1px; width: 50%; margin-top: 0.8em; margin-bottom: 0.8em;"> </div>
+<p>Text after width-constrained border-top div HR.</p>
+
+<h2>Descending widths in sequence</h2>
+<hr style="width: 100%;"/>
+<hr style="width: 66%;"/>
+<hr style="width: 33%;"/>
+<hr style="width: 10%;"/>
+<p>Four HRs above: 100%, 66%, 33%, 10% — each visually narrower, all centered.</p>
+
+<h2>CSS class width (external stylesheet)</h2>
+<p>class="hr-full" (100%):</p>
+<hr class="hr-full"/>
+<p>class="hr-half" (50%):</p>
+<hr class="hr-half"/>
+<p>class="hr-quarter" (25%):</p>
+<hr class="hr-quarter"/>
+<p>These three HRs use classes from style.css — widths must match the inline-style HRs above.</p>
 """,
         css_link="style.css",
     )

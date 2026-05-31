@@ -338,6 +338,94 @@ TEST(XhtmlBody, HrPreservesParentStyles) {
   EXPECT_EQ(paragraphs[2].text.runs[0].margin_left, 36);
 }
 
+TEST(XhtmlBody, HrDefaultWidthIsNullopt) {
+  // A bare <hr/> with no styling should have hr_width_pct = nullopt
+  // (renderer interprets nullopt as default 1/3 width).
+  const char* xhtml = "<html><body><hr/></body></html>";
+
+  ZipReader dummy_zip;
+  std::vector<Paragraph> paragraphs;
+  parse_xhtml_body(reinterpret_cast<const uint8_t*>(xhtml), std::strlen(xhtml), nullptr, nullptr, "", dummy_zip,
+                   paragraphs);
+
+  ASSERT_EQ(paragraphs.size(), 1u);
+  EXPECT_EQ(paragraphs[0].type, ParagraphType::Hr);
+  EXPECT_FALSE(paragraphs[0].hr_width_pct.has_value());
+}
+
+TEST(XhtmlBody, HrInlineStyleWidth) {
+  // width: 50% in an inline style attribute should be parsed and stored.
+  const char* xhtml = "<html><body><hr style=\"width: 50%;\"/></body></html>";
+
+  ZipReader dummy_zip;
+  std::vector<Paragraph> paragraphs;
+  parse_xhtml_body(reinterpret_cast<const uint8_t*>(xhtml), std::strlen(xhtml), nullptr, nullptr, "", dummy_zip,
+                   paragraphs);
+
+  ASSERT_EQ(paragraphs.size(), 1u);
+  EXPECT_EQ(paragraphs[0].type, ParagraphType::Hr);
+  ASSERT_TRUE(paragraphs[0].hr_width_pct.has_value());
+  EXPECT_EQ(*paragraphs[0].hr_width_pct, 50u);
+}
+
+TEST(XhtmlBody, HrExternalCssWidth) {
+  // width: 33% from an external stylesheet should be picked up via the
+  // full cascade — not just the inline style attribute.
+  CssStylesheet sheet;
+  sheet.extend_from_sheet("hr { width: 33%; }");
+
+  const char* xhtml = "<html><body><hr/></body></html>";
+
+  ZipReader dummy_zip;
+  std::vector<Paragraph> paragraphs;
+  parse_xhtml_body(reinterpret_cast<const uint8_t*>(xhtml), std::strlen(xhtml), nullptr, &sheet, "", dummy_zip,
+                   paragraphs);
+
+  ASSERT_EQ(paragraphs.size(), 1u);
+  EXPECT_EQ(paragraphs[0].type, ParagraphType::Hr);
+  ASSERT_TRUE(paragraphs[0].hr_width_pct.has_value());
+  EXPECT_EQ(*paragraphs[0].hr_width_pct, 33u);
+}
+
+TEST(XhtmlBody, HrClassWidth) {
+  // width: 75% from a CSS class should be applied to <hr class="wide"/>.
+  CssStylesheet sheet;
+  sheet.extend_from_sheet(".wide { width: 75%; }");
+
+  const char* xhtml = "<html><body><hr class=\"wide\"/></body></html>";
+
+  ZipReader dummy_zip;
+  std::vector<Paragraph> paragraphs;
+  parse_xhtml_body(reinterpret_cast<const uint8_t*>(xhtml), std::strlen(xhtml), nullptr, &sheet, "", dummy_zip,
+                   paragraphs);
+
+  ASSERT_EQ(paragraphs.size(), 1u);
+  EXPECT_EQ(paragraphs[0].type, ParagraphType::Hr);
+  ASSERT_TRUE(paragraphs[0].hr_width_pct.has_value());
+  EXPECT_EQ(*paragraphs[0].hr_width_pct, 75u);
+}
+
+TEST(XhtmlBody, HrInlineStyleOverridesExternalCss) {
+  // In this system's cascade (inline + effective_inline + extern_css),
+  // extern_css is rightmost so it wins when both specify width.
+  // This is consistent with how all other block elements behave.
+  CssStylesheet sheet;
+  sheet.extend_from_sheet("hr { width: 33%; }");
+
+  const char* xhtml = "<html><body><hr style=\"width: 100%;\"/></body></html>";
+
+  ZipReader dummy_zip;
+  std::vector<Paragraph> paragraphs;
+  parse_xhtml_body(reinterpret_cast<const uint8_t*>(xhtml), std::strlen(xhtml), nullptr, &sheet, "", dummy_zip,
+                   paragraphs);
+
+  ASSERT_EQ(paragraphs.size(), 1u);
+  EXPECT_EQ(paragraphs[0].type, ParagraphType::Hr);
+  ASSERT_TRUE(paragraphs[0].hr_width_pct.has_value());
+  // extern_css wins over inline style in this system's cascade order
+  EXPECT_EQ(*paragraphs[0].hr_width_pct, 33u);
+}
+
 TEST(XhtmlBody, HtmlEntities) {
   const char* xhtml = "<html><body><p>Tom &amp; Jerry &lt;3&gt; &quot;test&quot;</p></body></html>";
 

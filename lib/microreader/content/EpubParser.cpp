@@ -999,8 +999,7 @@ class BodyParser {
     pending_inline_image_ = ImageRef(key, w, h);
   }
 
-  void push_hr(std::optional<uint16_t> spacing_before = std::nullopt,
-                std::optional<uint8_t> width_pct = std::nullopt) {
+  void push_hr(std::optional<uint16_t> spacing_before = std::nullopt, std::optional<uint8_t> width_pct = std::nullopt) {
     flush_run();
     auto p = Paragraph::make_hr();
     p.spacing_before = spacing_before;
@@ -1446,14 +1445,21 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
       }
 
       if (sv_eq(ev.name, "hr")) {
-        std::optional<uint8_t> hr_width;
+        auto hr_id_sv = ev.attrs.get("id");
+        auto hr_class_sv = ev.attrs.get("class");
         auto hr_style_sv = ev.attrs.get("style");
-        if (!hr_style_sv.empty()) {
-          auto hr_inline = CssRule::parse(hr_style_sv.data, hr_style_sv.length,
-                                            extern_css ? extern_css->config() : CssConfig{});
-          if (hr_inline.has_width_pct_)
-            hr_width = hr_inline.width_pct;
-        }
+        CssRule hr_inline;
+        if (!hr_style_sv.empty())
+          hr_inline =
+              CssRule::parse(hr_style_sv.data, hr_style_sv.length, extern_css ? extern_css->config() : CssConfig{});
+        const char* hr_id_p = hr_id_sv.data ? hr_id_sv.data : nullptr;
+        const char* hr_cls_p = hr_class_sv.data ? hr_class_sv.data : nullptr;
+        CssRule hr_style =
+            hr_inline + effective_inline->get("hr", 2, hr_id_p, hr_id_sv.length, hr_cls_p, hr_class_sv.length) +
+            (extern_css ? extern_css->get("hr", 2, hr_id_p, hr_id_sv.length, hr_cls_p, hr_class_sv.length) : CssRule{});
+        std::optional<uint8_t> hr_width;
+        if (hr_style.has_width_pct_)
+          hr_width = hr_style.width_pct;
         parser.push_hr(std::nullopt, hr_width);
         parser.depth++;  // balance synthetic EndElement for self-closing tag
         continue;
