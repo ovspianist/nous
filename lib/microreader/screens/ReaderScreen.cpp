@@ -402,13 +402,15 @@ void ReaderScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime&
   bool had_next_press = false;
   bool had_prev_press = false;
 
-  bool side_inv = app_ && app_->reader_side_inverted();
-  bool front_inv = app_ && app_->reader_front_inverted();
+  bool inv_side = app_ && app_->invert_side_buttons();
+  bool inv_bottom = app_ && app_->invert_bottom_paging();
 
-  Button logical_next_front = front_inv ? Button::Button2 : Button::Button3;
-  Button logical_prev_front = front_inv ? Button::Button3 : Button::Button2;
-  Button logical_next_side = side_inv ? Button::Up : Button::Down;
-  Button logical_prev_side = side_inv ? Button::Down : Button::Up;
+  // Default: Button3=next, Button2=prev (inv_bottom=true flips front buttons).
+  // Default: Up=next, Down=prev (inv_side=false keeps top=next).
+  Button logical_next_front = inv_bottom ? Button::Button2 : Button::Button3;
+  Button logical_prev_front = inv_bottom ? Button::Button3 : Button::Button2;
+  Button logical_next_side = inv_side ? Button::Down : Button::Up;
+  Button logical_prev_side = inv_side ? Button::Up : Button::Down;
 
   Button btn;
   while (buttons.next_press(btn)) {

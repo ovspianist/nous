@@ -26,16 +26,16 @@
 
 namespace microreader {
 
-static const char* const kControlModeLabels[] = {
-  "Default", "Side Inverted", "Front Inverted", "Inverted"
-};
-
-static std::string get_reader_controls_label(ControlMode mode) {
-  return std::string("Reader Controls: ") + kControlModeLabels[static_cast<int>(mode)];
+static std::string get_menu_nav_label(bool inverted) {
+  return std::string("Menu Nav: ") + (inverted ? "Right=Down" : "Right=Up");
 }
 
-static std::string get_menu_controls_label(ControlMode mode) {
-  return std::string("Menu Controls: ") + kControlModeLabels[static_cast<int>(mode)];
+static std::string get_bottom_paging_label(bool inverted) {
+  return std::string("Bottom Paging: ") + (inverted ? "Right=Prev" : "Right=Next");
+}
+
+static std::string get_side_paging_label(bool inverted) {
+  return std::string("Side Paging: ") + (inverted ? "Top=Prev" : "Top=Next");
 }
 
 static std::string get_list_format_label(BookListFormat fmt) {
@@ -202,11 +202,14 @@ void SettingsScreen::on_start() {
   add_separator();
 
   // --- Controls ---
-  idx_reader_controls_ = count();
-  add_item(get_reader_controls_label(app_->reader_controls()));
+  idx_invert_side_ = count();
+  add_item(get_side_paging_label(app_->invert_side_buttons()));
 
-  idx_menu_controls_ = count();
-  add_item(get_menu_controls_label(app_->menu_controls()));
+  idx_invert_bottom_paging_ = count();
+  add_item(get_bottom_paging_label(app_->invert_bottom_paging()));
+
+  idx_invert_menu_ = count();
+  add_item(get_menu_nav_label(app_->invert_menu_buttons()));
 
   add_separator();
 
@@ -304,19 +307,27 @@ void SettingsScreen::on_select(int index) {
     app_->save_settings_();
     return;
   }
-  if (index == idx_reader_controls_) {
+  if (index == idx_invert_menu_) {
     if (app_) {
-      ControlMode v = static_cast<ControlMode>((static_cast<int>(app_->reader_controls()) + 1) % 4);
-      app_->set_reader_controls(v);
-      set_item_label(idx_reader_controls_, get_reader_controls_label(v));
+      bool v = !app_->invert_menu_buttons();
+      app_->set_invert_menu_buttons(v);
+      set_item_label(idx_invert_menu_, get_menu_nav_label(v));
     }
     return;
   }
-  if (index == idx_menu_controls_) {
+  if (index == idx_invert_bottom_paging_) {
     if (app_) {
-      ControlMode v = static_cast<ControlMode>((static_cast<int>(app_->menu_controls()) + 1) % 4);
-      app_->set_menu_controls(v);
-      set_item_label(idx_menu_controls_, get_menu_controls_label(v));
+      bool v = !app_->invert_bottom_paging();
+      app_->set_invert_bottom_paging(v);
+      set_item_label(idx_invert_bottom_paging_, get_bottom_paging_label(v));
+    }
+    return;
+  }
+  if (index == idx_invert_side_) {
+    if (app_) {
+      bool v = !app_->invert_side_buttons();
+      app_->set_invert_side_buttons(v);
+      set_item_label(idx_invert_side_, get_side_paging_label(v));
     }
     return;
   }

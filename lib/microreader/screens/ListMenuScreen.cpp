@@ -11,9 +11,11 @@ namespace microreader {
 
 int ListMenuScreen::font_size_idx_ = 0;
 
-static constexpr int kHeaderY = 15;        // top padding before the title text
-static constexpr int kBottomPadding = 16;  // list padding from bottom
-static constexpr int kButtonHintsH = 26;   // height of the button hint area
+static constexpr int kHeaderY = 15;         // top padding before the title text
+static constexpr int kBottomPadding = 16;   // list padding from bottom
+static constexpr int kButtonHintsH = 26;    // height of the button hint area
+static constexpr int kSubtitleGap = 3;      // gap between bottom of title block and first subtitle
+static constexpr int kSubtitleSpacing = 6;  // extra pixels between consecutive subtitles (added to y_advance)
 
 void ListMenuScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   buf_ = &buf;
@@ -51,11 +53,11 @@ void ListMenuScreen::ensure_visible_() {
   if (!ui_font_.valid() || count() == 0 || !buf_)
     return;
   const int line_h = ui_font_.y_advance() + 8;
-  int subtitle_h = subtitle_.empty() ? 0 : ui_font_.y_advance() + 8;
+  int subtitle_h = subtitle_.empty() ? 0 : ui_font_.y_advance() + kSubtitleSpacing;
   if (!subtitle2_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + 8;
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
   if (!subtitle3_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + 8;
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
   const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
   const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
   const int header_h = kHeaderY + hfh + t2h + subtitle_h + 8;
@@ -81,11 +83,11 @@ void ListMenuScreen::center_on_selected_() {
   if (!ui_font_.valid() || count() == 0 || !buf_)
     return;
   const int line_h = ui_font_.y_advance() + 8;
-  int subtitle_h = subtitle_.empty() ? 0 : ui_font_.y_advance() + 8;
+  int subtitle_h = subtitle_.empty() ? 0 : ui_font_.y_advance() + kSubtitleSpacing;
   if (!subtitle2_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + 8;
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
   if (!subtitle3_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + 8;
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
   const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
   const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
   const int header_h = kHeaderY + hfh + t2h + subtitle_h + 8;
@@ -148,47 +150,51 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
   }
 
   int subtitle_h = 0;
+  // Y coordinate of the bottom edge of the title block (below title2 if present).
+  // Subtitles stack downward from here with kSubtitleGap spacing.
+  const int title_bottom = kHeaderY + (header_font_.valid() ? header_font_.y_advance() : 0) +
+                           ((title2_ && header_font_.valid()) ? header_font_.y_advance() + 4 : 0);
+  int sub_y = title_bottom + kSubtitleGap;  // running Y for next subtitle baseline anchor
   if (!subtitle_.empty() && ui_font_.valid()) {
     const size_t sub_len = subtitle_.size();
     const int sw = ui_font_.word_width(subtitle_.c_str(), sub_len, FontStyle::Regular);
-    const int title_bottom = kHeaderY + (header_font_.valid() ? header_font_.y_advance() : 0) + ((title2_ && header_font_.valid()) ? header_font_.y_advance() : 0) + ((title2_ && header_font_.valid()) ? 4 : 0);
-    buf.draw_text_proportional((W - sw) / 2, title_bottom + ui_font_.baseline() + 2, subtitle_.c_str(), sub_len, ui_font_,
-                               false);
-    subtitle_h += ui_font_.y_advance() + 8;
+    buf.draw_text_proportional((W - sw) / 2, sub_y + ui_font_.baseline(), subtitle_.c_str(), sub_len, ui_font_, false);
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
+    sub_y += ui_font_.y_advance() + kSubtitleSpacing;
   }
   if (!subtitle2_.empty() && ui_font_.valid()) {
     const size_t sub2_len = subtitle2_.size();
     const int sw2 = ui_font_.word_width(subtitle2_.c_str(), sub2_len, FontStyle::Regular);
-    const int title_bottom = kHeaderY + (header_font_.valid() ? header_font_.y_advance() : 0) + ((title2_ && header_font_.valid()) ? header_font_.y_advance() : 0) + ((title2_ && header_font_.valid()) ? 4 : 0);
-    buf.draw_text_proportional((W - sw2) / 2, title_bottom + subtitle_h + ui_font_.baseline() + 2, subtitle2_.c_str(),
-                               sub2_len, ui_font_, false);
-    subtitle_h += ui_font_.y_advance() + 8;
+    buf.draw_text_proportional((W - sw2) / 2, sub_y + ui_font_.baseline(), subtitle2_.c_str(), sub2_len, ui_font_,
+                               false);
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
+    sub_y += ui_font_.y_advance() + kSubtitleSpacing;
   }
   if (!subtitle3_.empty() && ui_font_.valid()) {
     const size_t sub3_len = subtitle3_.size();
     const int sw3 = ui_font_.word_width(subtitle3_.c_str(), sub3_len, FontStyle::Regular);
-    const int title_bottom = kHeaderY + (header_font_.valid() ? header_font_.y_advance() : 0) + ((title2_ && header_font_.valid()) ? header_font_.y_advance() : 0) + ((title2_ && header_font_.valid()) ? 4 : 0);
-    buf.draw_text_proportional((W - sw3) / 2, title_bottom + subtitle_h + ui_font_.baseline() + 2, subtitle3_.c_str(),
-                               sub3_len, ui_font_, false);
-    subtitle_h += ui_font_.y_advance() + 8;
+    buf.draw_text_proportional((W - sw3) / 2, sub_y + ui_font_.baseline(), subtitle3_.c_str(), sub3_len, ui_font_,
+                               false);
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
   }
 
   if (!ui_font_.valid() || n == 0) {
     if (n == 0 && ui_font_.valid()) {
       static const char* kEmpty = "No items";
       const int ew = ui_font_.word_width(kEmpty, std::strlen(kEmpty), FontStyle::Regular);
-      buf.draw_text_proportional((W - ew) / 2, H / 2 + ui_font_.baseline(), kEmpty, ui_font_, false);
+      buf.draw_text_proportional((W - ew) / 2, H / 2 + ui_font_.baseline() - 2, kEmpty, std::strlen(kEmpty), ui_font_,
+                                 false);
     }
     return;
   }
 
-  const int line_h = ui_font_.y_advance() + 8;
+  const int line_h = ui_font_.y_advance() + 8;  // text height + inter-item gap
   const int baseline = ui_font_.baseline();
-  // Provide padding below the header
+  // Total height reserved for the header: top margin + title(s) + subtitles + gap before first item.
   const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
   const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
   const int header_h = kHeaderY + hfh + t2h + subtitle_h + 8;
-  const int visible = (H - header_h - kBottomPadding) / line_h;
+  const int visible = (H - header_h - kBottomPadding) / line_h;  // max items that fit between header and bottom pad
 
   const int end = scroll_offset_ + visible < n ? scroll_offset_ + visible : n;
 
@@ -203,7 +209,9 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     }
   }
 
-  const int items_y = (H - total_h) / 2 + 20;
+  // When all items fit: vertically centre them in the space between header and bottom padding.
+  // When scrolling: start items immediately below the header.
+  const int items_y = n <= visible ? header_h + (H - kBottomPadding - header_h - total_h) / 2 : header_h;
 
   static const char kEllipsis[] = "...";
   const int ellipsis_w = ui_font_.word_width(kEllipsis, 3, FontStyle::Regular);
@@ -312,10 +320,10 @@ void ListMenuScreen::draw_button_hints_(DrawBuffer& buf) const {
   const int baseline = ui_font_.baseline();
 
   // Four labels: back=◀, select=▶, down=▼, up=▲
-  bool front_inv = app_ && app_->menu_front_inverted();
+  bool inv_menu = app_ && app_->invert_menu_buttons();
   const char* lbl_down = "\xe2\x96\xbc";
   const char* lbl_up = "\xe2\x96\xb2";
-  const char* kLabels[4] = {"\xe2\x97\x80", "\xe2\x96\xb6", front_inv ? lbl_down : lbl_up, front_inv ? lbl_up : lbl_down};
+  const char* kLabels[4] = {"\xe2\x97\x80", "\xe2\x96\xb6", inv_menu ? lbl_up : lbl_down, inv_menu ? lbl_down : lbl_up};
   static const size_t kLens[4] = {3, 3, 3, 3};
 
   const bool sideways = buf.rotation() == Rotation::Deg90;
@@ -370,12 +378,12 @@ void ListMenuScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntim
   bool had_up_press = false;
   bool had_down_press = false;
 
-  bool side_inv = app_ && app_->menu_side_inverted();
-  bool front_inv = app_ && app_->menu_front_inverted();
-  Button logical_up_front = front_inv ? Button::Button3 : Button::Button2;
-  Button logical_down_front = front_inv ? Button::Button2 : Button::Button3;
-  Button logical_up_side = side_inv ? Button::Down : Button::Up;
-  Button logical_down_side = side_inv ? Button::Up : Button::Down;
+  bool inv_menu = app_ && app_->invert_menu_buttons();
+  // Default (inv_menu=false): Button3=up, Button2=down, Up=up, Down=down.
+  Button logical_up_front = inv_menu ? Button::Button2 : Button::Button3;
+  Button logical_down_front = inv_menu ? Button::Button3 : Button::Button2;
+  Button logical_up_side = Button::Up;
+  Button logical_down_side = Button::Down;
 
   Button btn;
   while (buttons.next_press(btn)) {
