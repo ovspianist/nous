@@ -593,7 +593,9 @@ const TextLayout::LaidOutParagraph& TextLayout::get_laid_out_(size_t pi) const {
         uint16_t pct =
             opts.line_height_multiplier_percent != 0 ? opts.line_height_multiplier_percent : para.text.line_height_pct;
         slot.line_heights[i] = compute_line_height(font, slot.lines[i], pct);
-        slot.line_baselines[i] = line_baseline(font, slot.lines[i]);
+        uint16_t bl = line_baseline(font, slot.lines[i]);
+        // Clamp baseline to the line height so pending_desc = height - baseline never underflows.
+        slot.line_baselines[i] = std::min(bl, slot.line_heights[i]);
       }
       if (!img.promoted && img.has_image && img.width > 0 && img.height > 0 && !slot.lines.empty()) {
         uint16_t bl0 = slot.line_baselines[0];
@@ -742,11 +744,9 @@ static uint16_t build_page_items(PageContent& page, std::vector<TextLayout::Page
         break;
       case TextLayout::PageItem::Hr: {
         const auto& hr_para = source.paragraph(item.para_idx);
-        const uint16_t hr_w = hr_para.hr_width_pct.has_value()
-                                  ? static_cast<uint16_t>(cw * *hr_para.hr_width_pct / 100)
-                                  : cw / 3;
-        page.items.push_back(PageHrItem{
-            static_cast<uint16_t>(opts.padding_left + (cw - hr_w) / 2), y, hr_w, dy});
+        const uint16_t hr_w =
+            hr_para.hr_width_pct.has_value() ? static_cast<uint16_t>(cw * *hr_para.hr_width_pct / 100) : cw / 3;
+        page.items.push_back(PageHrItem{static_cast<uint16_t>(opts.padding_left + (cw - hr_w) / 2), y, hr_w, dy});
         break;
       }
       case TextLayout::PageItem::Empty:

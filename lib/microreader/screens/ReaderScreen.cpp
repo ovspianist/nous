@@ -1043,6 +1043,7 @@ void ReaderScreen::load_position_() {
 
   // Try the current (hash-based) key first.
   FILE* f = std::fopen(pos_path_.c_str(), "r");
+  bool migrating = false;
 
   // If not found, try the legacy slug key so existing .pos files still load.
   if (!f) {
@@ -1051,6 +1052,7 @@ void ReaderScreen::load_position_() {
     if (legacy_path != pos_path_) {
       f = std::fopen(legacy_path.c_str(), "r");
       if (f) {
+        migrating = true;
         MR_LOGI("reader", "Migrating legacy pos file: '%s' -> '%s'", legacy_path.c_str(), pos_path_.c_str());
 #ifdef ESP_PLATFORM
         unlink(legacy_path.c_str());
@@ -1070,8 +1072,14 @@ void ReaderScreen::load_position_() {
     saved_chapter_idx_ = ch;
     saved_page_pos_ = PagePosition{static_cast<uint16_t>(para), static_cast<uint16_t>(line), static_cast<uint32_t>(to)};
     MR_LOGI("reader", "Loaded pos ch=%u para=%u line=%u to=%u (scanned=%d)", ch, para, line, to, scanned);
-    // Immediately write to the new path so future opens find it directly.
-    save_position_();
+    // Write to the new path only when migrating from the legacy key.
+    if (migrating) {
+      FILE* fw = std::fopen(pos_path_.c_str(), "w");
+      if (fw) {
+        std::fprintf(fw, "%u %u %u %u\n", ch, para, line, to);
+        std::fclose(fw);
+      }
+    }
   }
 }
 
