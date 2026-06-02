@@ -247,6 +247,29 @@ static std::string decode_entities(const std::string& text) {
   return result;
 }
 
+// Collapse all runs of whitespace (including newlines, tabs) to a single space
+// and strip leading/trailing whitespace. Used to normalize navLabel text.
+static std::string normalize_whitespace(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  bool in_space = true;  // start true so leading whitespace is stripped
+  for (unsigned char c : s) {
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      if (!in_space) {
+        out += ' ';
+        in_space = true;
+      }
+    } else {
+      out += static_cast<char>(c);
+      in_space = false;
+    }
+  }
+  // Strip trailing space
+  if (!out.empty() && out.back() == ' ')
+    out.pop_back();
+  return out;
+}
+
 // Parse NCX table of contents
 static EpubError parse_ncx(IZipFile& file, const ZipReader& zip, const ZipEntry& entry, const std::string& root_dir,
                            TableOfContents& toc, uint8_t* work_buf, size_t work_buf_size, uint8_t* xml_buf,
@@ -279,7 +302,7 @@ static EpubError parse_ncx(IZipFile& file, const ZipReader& zip, const ZipEntry&
       } else if (in_nav_label && sv_eq(ev.name, "text")) {
         XmlEvent text;
         if (reader.next_event(text) == XmlError::Ok && text.type == XmlEventType::Text) {
-          current_label = decode_entities(sv_to_string(text.content));
+          current_label = normalize_whitespace(decode_entities(sv_to_string(text.content)));
         }
       } else if (nav_depth > 0 && sv_eq(ev.name, "content")) {
         auto src = sv_to_string(ev.attrs.get("src"));
@@ -378,19 +401,19 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
           XmlEvent text;
           if (reader.next_event(text) == XmlError::Ok && text.type == XmlEventType::Text) {
             if (metadata_.title.empty())
-              metadata_.title = sv_to_string(text.content);
+              metadata_.title = normalize_whitespace(sv_to_string(text.content));
           }
         } else if (sv_eq(ev.name, "dc:creator") || sv_eq(ev.name, "creator")) {
           XmlEvent text;
           if (reader.next_event(text) == XmlError::Ok && text.type == XmlEventType::Text) {
             if (!metadata_.author.has_value())
-              metadata_.author = sv_to_string(text.content);
+              metadata_.author = normalize_whitespace(sv_to_string(text.content));
           }
         } else if (sv_eq(ev.name, "dc:language") || sv_eq(ev.name, "language")) {
           XmlEvent text;
           if (reader.next_event(text) == XmlError::Ok && text.type == XmlEventType::Text) {
             if (!metadata_.language.has_value())
-              metadata_.language = sv_to_string(text.content);
+              metadata_.language = normalize_whitespace(sv_to_string(text.content));
           }
         } else if (sv_eq(ev.name, "meta")) {
           auto name = ev.attrs.get("name");
@@ -1760,7 +1783,9 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
           // Don't enter float mode; just mark the depth and wait for a single character.
           parser.drop_cap_depth_ = parser.depth;
           parser.drop_cap_char_.reset();
-          parser.drop_cap_size_pct_ = style.has_font_size_pct_ ? std::min(style.font_size_pct, static_cast<uint8_t>(150)) : static_cast<uint8_t>(150);
+          parser.drop_cap_size_pct_ = style.has_font_size_pct_
+                                          ? std::min(style.font_size_pct, static_cast<uint8_t>(150))
+                                          : static_cast<uint8_t>(150);
         } else {
           // Block float (e.g. <div class="figleft">) — existing float-image pipeline.
           if (parser.merge_after_float_) {
@@ -1892,16 +1917,28 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
         size_t cp_len = 0;
         if (end > d) {
           unsigned char b = static_cast<unsigned char>(*d);
-          if (b < 0x80) { cp = b; cp_len = 1; }
-          else if ((b & 0xE0) == 0xC0 && end - d >= 2) { cp = (b & 0x1F) << 6 | (d[1] & 0x3F); cp_len = 2; }
-          else if ((b & 0xF0) == 0xE0 && end - d >= 3) { cp = ((b & 0x0F) << 12) | ((d[1] & 0x3F) << 6) | (d[2] & 0x3F); cp_len = 3; }
-          else if ((b & 0xF8) == 0xF0 && end - d >= 4) { cp = ((b & 0x07) << 18) | ((d[1] & 0x3F) << 12) | ((d[2] & 0x3F) << 6) | (d[3] & 0x3F); cp_len = 4; }
+          if (b < 0x80) {
+            cp = b;
+            cp_len = 1;
+          } else if ((b & 0xE0) == 0xC0 && end - d >= 2) {
+            cp = (b & 0x1F) << 6 | (d[1] & 0x3F);
+            cp_len = 2;
+          } else if ((b & 0xF0) == 0xE0 && end - d >= 3) {
+            cp = ((b & 0x0F) << 12) | ((d[1] & 0x3F) << 6) | (d[2] & 0x3F);
+            cp_len = 3;
+          } else if ((b & 0xF8) == 0xF0 && end - d >= 4) {
+            cp = ((b & 0x07) << 18) | ((d[1] & 0x3F) << 12) | ((d[2] & 0x3F) << 6) | (d[3] & 0x3F);
+            cp_len = 4;
+          }
         }
         // Accept only if the text node is exactly this one codepoint (no extra text)
         const char* rest = d + cp_len;
         bool rest_is_ws = true;
         for (const char* p = rest; p < end; ++p) {
-          if (!std::isspace(static_cast<unsigned char>(*p))) { rest_is_ws = false; break; }
+          if (!std::isspace(static_cast<unsigned char>(*p))) {
+            rest_is_ws = false;
+            break;
+          }
         }
         if (cp > 0 && cp_len > 0 && rest_is_ws) {
           parser.drop_cap_char_ = cp;
