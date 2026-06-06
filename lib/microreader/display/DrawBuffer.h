@@ -67,9 +67,9 @@ class IDisplay {
   }
 
   // Partially refresh a physical sub-rectangle of the display.
-  // new_buf/old_buf: 1-bit packed, row-major, stride_bytes per row.
-  // (phys_x, phys_y): physical top-left; (phys_w, phys_h): pixel dimensions.
-  // phys_x must be byte-aligned (multiple of 8).
+  // new_buf: 1-bit packed, row-major, stride_bytes per row.
+  // phys_x is a raw hardware column — caller must add DisplayFrame::kPanelOffsetX and
+  // ensure the result is byte-aligned (multiple of 8).
   // Default: no-op - platforms may override for efficient region updates.
   virtual void partial_refresh_region(int phys_x, int phys_y, int phys_w, int phys_h, const uint8_t* new_buf,
                                       int stride_bytes) {
@@ -600,7 +600,7 @@ class DrawBuffer {
   // Logical box: 256 x 32 px, centred horizontally, flush to the bottom.
   //   lx = (480 - 256) / 2 = 112,  ly = 788 - 32 = 756
   // Physical (Deg90 rotation):
-  //   px = ly = 756  (byte-aligned with panel offset: 756 + 12 = 768)
+  //   px = kLoadPhysX = 750  (byte-aligned: 750 + kPanelOffsetX(10) = 760 = 95*8)
   //   py = PhysH - lx - lw = 480 - 112 - 256 = 112
   //   pw = lh = 32   ->  stride = 4 bytes
   //   ph = lw = 256
@@ -611,7 +611,9 @@ class DrawBuffer {
   static constexpr int kLoadLogX = (kWidth - kLoadLogW) / 2;  // 112
   static constexpr int kLoadLogY = kHeight - kLoadLogH;       // - 4;   // 744
 
-  static constexpr int kLoadPhysX = kLoadLogY;                                              // 756
+  // kLoadPhysX must satisfy: (kLoadPhysX + kPanelOffsetX) % 8 == 0 for byte-aligned hardware writes.
+  // With kPanelOffsetX=10: 750+10=760 ✓  (box ends at 782, 4px from logical bottom edge 786).
+  static constexpr int kLoadPhysX = 750;
   static constexpr int kLoadPhysY = DisplayFrame::kPhysicalHeight - kLoadLogX - kLoadLogW;  // 112
   static constexpr int kLoadPhysW = kLoadLogH;                                              // 32
   static constexpr int kLoadPhysH = kLoadLogW;                                              // 256
@@ -636,7 +638,7 @@ class DrawBuffer {
       return;  // skip if panel is still refreshing
     uint8_t new_buf[kLoadBufBytes];
     render_loading_box_(new_buf, text, progress_pct);
-    display_.partial_refresh_region(kLoadPhysX, kLoadPhysY, kLoadPhysW, kLoadPhysH, new_buf, kLoadStride);
+    display_.partial_refresh_region(kLoadPhysX + DisplayFrame::kPanelOffsetX, kLoadPhysY, kLoadPhysW, kLoadPhysH, new_buf, kLoadStride);
   }
 
  private:

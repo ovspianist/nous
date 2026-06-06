@@ -290,11 +290,11 @@ class EInkDisplay : public microreader::IDisplay {
   }
 
   // Partially refresh a physical sub-rectangle.
-  // phys_x/phys_w are in pixels (same coordinate system as setRamArea's x/w).
-  // The +12 panel offset matches the full_refresh/partial_refresh convention.
+  // phys_x is a raw hardware column (0 = first panel column); caller is responsible for
+  // adding any panel offset before calling. phys_x must be byte-aligned (multiple of 8).
   void partial_refresh_region(int phys_x, int phys_y, int phys_w, int phys_h, const uint8_t* new_buf,
                               int stride_bytes) override {
-    const uint16_t x_start = static_cast<uint16_t>(phys_x + 12);
+    const uint16_t x_start = static_cast<uint16_t>(phys_x);
     const uint32_t total_bytes = static_cast<uint32_t>(stride_bytes * phys_h);
     wakeIfNeeded();
     waitWhileBusy();  // wait for any previous refresh to finish before writing RAM

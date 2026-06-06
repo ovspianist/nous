@@ -124,13 +124,15 @@ class DesktopEmulatorDisplay final : public microreader::IDisplay {
 
   void partial_refresh_region(int phys_x, int phys_y, int phys_w, int phys_h, const uint8_t* new_buf,
                               int stride_bytes) override {
+    // phys_x is raw hardware column; convert to sim_ app-space index by subtracting panel offset.
+    const int sim_x0 = phys_x - microreader::DisplayFrame::kPanelOffsetX;
     for (int row = 0; row < phys_h; ++row) {
       const int y = phys_y + row;
       if (y < 0 || y >= microreader::DisplayFrame::kPhysicalHeight)
         continue;
       const uint8_t* src = new_buf + row * stride_bytes;
       for (int col = 0; col < phys_w; ++col) {
-        const int x = phys_x + col;
+        const int x = sim_x0 + col;
         if (x < 0 || x >= microreader::DisplayFrame::kPhysicalWidth)
           continue;
         const bool white = (src[col / 8] >> (7 - (col & 7))) & 1;
