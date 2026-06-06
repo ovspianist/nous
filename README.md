@@ -117,6 +117,7 @@ python tools/font_overview.py
 
 # UI fonts (bitmap, bw-only)
 python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 14 -o resources/fonts/ui-small.mbf --header lib/microreader/display/ui_font_small.h --bw-only --ranges ui
+python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 18 -o resources/fonts/ui-medium.mbf --header lib/microreader/display/ui_font_medium.h --bw-only --ranges ui
 python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 32 -o resources/fonts/ui-header.mbf --header lib/microreader/display/ui_font_header.h --bw-only --ranges ui
 ```
 
