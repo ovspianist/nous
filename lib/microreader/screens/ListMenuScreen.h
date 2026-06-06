@@ -40,7 +40,7 @@ class ListMenuScreen : public IScreen {
     return font_size_idx_;
   }
 
-  protected:
+ protected:
   const char* title_ = nullptr;
   const char* title2_ = nullptr;
   std::string subtitle_;
@@ -99,11 +99,13 @@ class ListMenuScreen : public IScreen {
   // Called when user presses back.
   virtual void on_back();
 
-  protected:
+ protected:
   BitmapFont ui_font_;
   BitmapFont header_font_;
   static int font_size_idx_;  // 0=Normal, 1=Large, 2=XLarge
-  void request_redraw() { force_redraw_ = true; }
+  void request_redraw() {
+    force_redraw_ = true;
+  }
 
   // Re-run start() to rebuild items with updated settings (e.g. after font change).
   void restart() {
@@ -129,6 +131,24 @@ class ListMenuScreen : public IScreen {
   bool force_redraw_ = false;
   DrawBuffer* buf_ = nullptr;
   IRuntime* runtime_ = nullptr;
+
+  // Computes the header height (title + subtitles) without drawing anything.
+  // Used by ensure_visible_() and center_on_selected_() before a draw pass.
+  int compute_header_h_() const;
+
+  // 1. Draws title, title2, and subtitles. Returns the header height (pixels from y=0 to
+  //    where list items may start).
+  int draw_header_(DrawBuffer& buf, int W, int H) const;
+
+  // 2. Draws the battery bar and button-hint glyphs at the bottom of the screen.
+  //    Returns the height reserved at the bottom (list items must stay above this).
+  int draw_bottom_(DrawBuffer& buf, int W, int H, std::optional<uint8_t> battery_pct) const;
+
+  // 3. Draws the scrollable item list, scrollbar, and area-boundary indicator lines,
+  //    given the already-known header and bottom heights.
+  void draw_list_(DrawBuffer& buf, int W, int H, int header_h, int bottom_h) const;
+
+  // 4. Draws the four navigaton-button hint glyphs. Called by draw_bottom_.
   void draw_button_hints_(DrawBuffer& buf) const;
 };
 

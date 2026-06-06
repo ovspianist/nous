@@ -1,5 +1,6 @@
 #include "ListMenuScreen.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "../Application.h"
@@ -12,10 +13,12 @@ namespace microreader {
 int ListMenuScreen::font_size_idx_ = 0;
 
 static constexpr int kHeaderY = 15;         // top padding before the title text
+static constexpr int kHeaderBottomGap = 4;  // gap between last header line and first list item
 static constexpr int kBottomPadding = 16;   // list padding from bottom
 static constexpr int kButtonHintsH = 26;    // height of the button hint area
 static constexpr int kSubtitleGap = 3;      // gap between bottom of title block and first subtitle
 static constexpr int kSubtitleSpacing = 6;  // extra pixels between consecutive subtitles (added to y_advance)
+static constexpr int kItemSpacing = 6;      // vertical gap between list item rows
 
 void ListMenuScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   buf_ = &buf;
@@ -52,16 +55,12 @@ void ListMenuScreen::start(DrawBuffer& buf, IRuntime& runtime) {
 void ListMenuScreen::ensure_visible_() {
   if (!ui_font_.valid() || count() == 0 || !buf_)
     return;
-  const int line_h = ui_font_.y_advance() + 8;
-  int subtitle_h = subtitle_.empty() ? 0 : ui_font_.y_advance() + kSubtitleSpacing;
-  if (!subtitle2_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-  if (!subtitle3_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-  const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
-  const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
-  const int header_h = kHeaderY + hfh + t2h + subtitle_h + 8;
-  const int visible = (buf_->height() - header_h - kBottomPadding) / line_h;
+  const int line_h = ui_font_.y_advance() + kItemSpacing;
+  const int header_h = compute_header_h_();
+  const int available_h = buf_->height() - header_h - kBottomPadding;
+  // N items occupy N*y_advance + (N-1)*kItemSpacing = N*line_h - kItemSpacing pixels.
+  // So max N where that fits: N <= (available_h + kItemSpacing) / line_h.
+  const int visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
   if (visible <= 0)
     return;
   if (selected_ < scroll_offset_)
@@ -82,16 +81,10 @@ void ListMenuScreen::ensure_visible_() {
 void ListMenuScreen::center_on_selected_() {
   if (!ui_font_.valid() || count() == 0 || !buf_)
     return;
-  const int line_h = ui_font_.y_advance() + 8;
-  int subtitle_h = subtitle_.empty() ? 0 : ui_font_.y_advance() + kSubtitleSpacing;
-  if (!subtitle2_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-  if (!subtitle3_.empty() && ui_font_.valid())
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-  const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
-  const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
-  const int header_h = kHeaderY + hfh + t2h + subtitle_h + 8;
-  const int visible = (buf_->height() - header_h - kBottomPadding) / line_h;
+  const int line_h = ui_font_.y_advance() + kItemSpacing;
+  const int header_h = compute_header_h_();
+  const int available_h = buf_->height() - header_h - kBottomPadding;
+  const int visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
   if (visible <= 0)
     return;
   // Center the selection: put it in the middle of the visible window.
@@ -104,27 +97,81 @@ void ListMenuScreen::center_on_selected_() {
   scroll_offset_ = offset;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// draw_all_: orchestrates the four drawing passes.
+// ─────────────────────────────────────────────────────────────────────────────
 void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) const {
   const int W = buf.width();
   const int H = buf.height();
-  const int n = count();
-
   buf.fill(true);
+  const int header_h = draw_header_(buf, W, H);
+  const int bottom_h = draw_bottom_(buf, W, H, battery_pct);
+  draw_list_(buf, W, H, header_h, bottom_h);
+}
 
-  // Title (header font)
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. compute_header_h_: returns the header height without drawing anything.
+//    Used by ensure_visible_() and center_on_selected_() before the draw pass.
+// ─────────────────────────────────────────────────────────────────────────────
+int ListMenuScreen::compute_header_h_() const {
+  int subtitle_h = 0;
+  if (ui_font_.valid()) {
+    if (!subtitle_.empty())
+      subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
+    if (!subtitle2_.empty())
+      subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
+    if (!subtitle3_.empty())
+      subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
+  }
+  const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
+  const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
+  return kHeaderY + hfh + t2h + subtitle_h + kHeaderBottomGap;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. draw_header_: draws title, title2, and subtitles.
+//    Returns header_h = pixels from y=0 to where list items begin.
+// ─────────────────────────────────────────────────────────────────────────────
+int ListMenuScreen::draw_header_(DrawBuffer& buf, int W, int H) const {
   if (title_ && header_font_.valid()) {
-    const size_t title_len = std::strlen(title_);
-    const int tw = header_font_.word_width(title_, title_len, FontStyle::Regular);
+    const size_t len = std::strlen(title_);
+    const int tw = header_font_.word_width(title_, len, FontStyle::Regular);
     buf.draw_text_proportional((W - tw) / 2, kHeaderY + header_font_.baseline(), title_, header_font_, false);
   }
   if (title2_ && header_font_.valid()) {
-    const size_t title2_len = std::strlen(title2_);
-    const int tw2 = header_font_.word_width(title2_, title2_len, FontStyle::Regular);
-    const int title2_y = kHeaderY + header_font_.y_advance();
-    buf.draw_text_proportional((W - tw2) / 2, title2_y + header_font_.baseline(), title2_, header_font_, false);
+    const size_t len = std::strlen(title2_);
+    const int tw = header_font_.word_width(title2_, len, FontStyle::Regular);
+    const int y = kHeaderY + header_font_.y_advance();
+    buf.draw_text_proportional((W - tw) / 2, y + header_font_.baseline(), title2_, header_font_, false);
   }
 
-  // Battery bar at the bottom center (horizontal)
+  // Subtitles stack from the bottom edge of the title block.
+  const int title_bottom = kHeaderY + (header_font_.valid() ? header_font_.y_advance() : 0) +
+                           ((title2_ && header_font_.valid()) ? header_font_.y_advance() + 4 : 0);
+  int sub_y = title_bottom + kSubtitleGap;
+  int subtitle_h = 0;
+  auto draw_subtitle = [&](const std::string& text) {
+    if (text.empty() || !ui_font_.valid())
+      return;
+    const int sw = ui_font_.word_width(text.c_str(), text.size(), FontStyle::Regular);
+    buf.draw_text_proportional((W - sw) / 2, sub_y + ui_font_.baseline(), text.c_str(), text.size(), ui_font_, false);
+    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
+    sub_y += ui_font_.y_advance() + kSubtitleSpacing;
+  };
+  draw_subtitle(subtitle_);
+  draw_subtitle(subtitle2_);
+  draw_subtitle(subtitle3_);
+
+  const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
+  const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
+  return kHeaderY + hfh + t2h + subtitle_h + kHeaderBottomGap;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. draw_bottom_: draws the battery bar and navigation-button hint glyphs.
+//    Returns bottom_h = pixels reserved at the bottom (list must stay above).
+// ─────────────────────────────────────────────────────────────────────────────
+int ListMenuScreen::draw_bottom_(DrawBuffer& buf, int W, int H, std::optional<uint8_t> battery_pct) const {
   if (battery_pct.has_value()) {
     const int bat_pct = battery_pct.value();
     const int kBarW = 26;
@@ -132,13 +179,13 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     const int kBarX = (W - kBarW) / 2;
     const int kBarY = H - kBarH - 4;
 
-    // Outline: rounded corners
+    // Outline: rounded corners.
     buf.fill_rect(kBarX + 1, kBarY, kBarW - 2, 1, false);
     buf.fill_rect(kBarX + 1, kBarY + kBarH - 1, kBarW - 2, 1, false);
     buf.fill_rect(kBarX, kBarY + 1, 1, kBarH - 2, false);
     buf.fill_rect(kBarX + kBarW - 1, kBarY + 1, 1, kBarH - 2, false);
 
-    // Inner bar: sloped right side (left to right)
+    // Fill bar: sloped right edge (fuller = wider).
     const int max_fill = kBarW - 4;
     const int filled = (bat_pct * max_fill) / 100;
     if (filled > 0) {
@@ -149,89 +196,82 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     }
   }
 
-  int subtitle_h = 0;
-  // Y coordinate of the bottom edge of the title block (below title2 if present).
-  // Subtitles stack downward from here with kSubtitleGap spacing.
-  const int title_bottom = kHeaderY + (header_font_.valid() ? header_font_.y_advance() : 0) +
-                           ((title2_ && header_font_.valid()) ? header_font_.y_advance() + 4 : 0);
-  int sub_y = title_bottom + kSubtitleGap;  // running Y for next subtitle baseline anchor
-  if (!subtitle_.empty() && ui_font_.valid()) {
-    const size_t sub_len = subtitle_.size();
-    const int sw = ui_font_.word_width(subtitle_.c_str(), sub_len, FontStyle::Regular);
-    buf.draw_text_proportional((W - sw) / 2, sub_y + ui_font_.baseline(), subtitle_.c_str(), sub_len, ui_font_, false);
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-    sub_y += ui_font_.y_advance() + kSubtitleSpacing;
-  }
-  if (!subtitle2_.empty() && ui_font_.valid()) {
-    const size_t sub2_len = subtitle2_.size();
-    const int sw2 = ui_font_.word_width(subtitle2_.c_str(), sub2_len, FontStyle::Regular);
-    buf.draw_text_proportional((W - sw2) / 2, sub_y + ui_font_.baseline(), subtitle2_.c_str(), sub2_len, ui_font_,
-                               false);
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-    sub_y += ui_font_.y_advance() + kSubtitleSpacing;
-  }
-  if (!subtitle3_.empty() && ui_font_.valid()) {
-    const size_t sub3_len = subtitle3_.size();
-    const int sw3 = ui_font_.word_width(subtitle3_.c_str(), sub3_len, FontStyle::Regular);
-    buf.draw_text_proportional((W - sw3) / 2, sub_y + ui_font_.baseline(), subtitle3_.c_str(), sub3_len, ui_font_,
-                               false);
-    subtitle_h += ui_font_.y_advance() + kSubtitleSpacing;
-  }
+  draw_button_hints_(buf);
+  return kBottomPadding;
+}
 
-  if (!ui_font_.valid() || n == 0) {
-    if (n == 0 && ui_font_.valid()) {
-      static const char* kEmpty = "No items";
-      const int ew = ui_font_.word_width(kEmpty, std::strlen(kEmpty), FontStyle::Regular);
-      buf.draw_text_proportional((W - ew) / 2, H / 2 + ui_font_.baseline() - 2, kEmpty, std::strlen(kEmpty), ui_font_,
-                                 false);
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. draw_list_: draws the scrollable item list, scrollbar, and boundary lines.
+// ─────────────────────────────────────────────────────────────────────────────
+void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int bottom_h) const {
+  const int n = count();
+  if (!ui_font_.valid())
+    return;
+
+  if (n == 0) {
+    static const char* kEmpty = "No items";
+    const int ew = ui_font_.word_width(kEmpty, std::strlen(kEmpty), FontStyle::Regular);
+    buf.draw_text_proportional((W - ew) / 2, H / 2 + ui_font_.baseline() - 2, kEmpty, std::strlen(kEmpty), ui_font_,
+                               false);
     return;
   }
 
-  const int line_h = ui_font_.y_advance() + 8;  // text height + inter-item gap
+  // ── Layout metrics ────────────────────────────────────────────────────────
+  const int line_h = ui_font_.y_advance() + kItemSpacing;  // height per item slot
   const int baseline = ui_font_.baseline();
-  // Total height reserved for the header: top margin + title(s) + subtitles + gap before first item.
-  const int hfh = header_font_.valid() ? header_font_.y_advance() : 0;
-  const int t2h = (title2_ && header_font_.valid()) ? header_font_.y_advance() : 0;
-  const int header_h = kHeaderY + hfh + t2h + subtitle_h + 8;
-  const int visible = (H - header_h - kBottomPadding) / line_h;  // max items that fit between header and bottom pad
+  const int available_h = H - header_h - bottom_h;
+  // N items need N*y_advance + (N-1)*kItemSpacing = N*line_h - kItemSpacing pixels.
+  // Rearranging: N = (available_h + kItemSpacing) / line_h.
+  const int visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
+  const int end = std::min(scroll_offset_ + visible, n);
 
-  const int end = scroll_offset_ + visible < n ? scroll_offset_ + visible : n;
-
-  // Compute total height for centring when all items fit on screen.
-  // Separators are drawn as a thin line taking half a line slot.
+  // Total pixel height of the currently visible item slots (for centering).
   int total_h = 0;
   for (int i = scroll_offset_; i < end; ++i) {
-    if (i < (int)separators_.size() && separators_[i]) {
+    if (i < (int)separators_.size() && separators_[i])
       total_h += (i < (int)labels_.size() && !labels_[i].empty()) ? line_h : line_h / 2;
-    } else {
+    else
       total_h += line_h;
-    }
   }
+  // Remove the trailing gap that was counted for the last slot.
+  if (total_h >= kItemSpacing)
+    total_h -= kItemSpacing;
 
-  // When all items fit: vertically centre them in the space between header and bottom padding.
-  // When scrolling: start items immediately below the header.
-  const int items_y = n <= visible ? header_h + (H - kBottomPadding - header_h - total_h) / 2 : header_h;
+  // Always vertically centre the visible items in the available space so the
+  // gap above the first item and below the last item is equal.
+  const int items_y = header_h + (available_h - total_h) / 2;
 
+  // ── Boundary indicator lines ───────────────────────────────────────────────
+  // Short centred horizontal lines showing the theoretical top and bottom of the
+  // list area, regardless of how many items are currently shown.
+  // {
+  //   const int ind_w = std::min(80, W / 3);
+  //   const int ind_x = (W - ind_w) / 2;
+  //   buf.fill_rect(ind_x, header_h, ind_w, 1, false);          // top bound
+  //   buf.fill_rect(ind_x, H - bottom_h - 1, ind_w, 1, false);  // bottom bound
+  // }
+
+  // ── Item rendering ────────────────────────────────────────────────────────
   static const char kEllipsis[] = "...";
   const int ellipsis_w = ui_font_.word_width(kEllipsis, 3, FontStyle::Regular);
   char trunc_buf[260];
 
   int y = items_y;
   for (int i = scroll_offset_; i < end; ++i) {
-    const bool is_sep = (i < (int)separators_.size() && separators_[i]);
-    if (is_sep) {
+    // Separator row
+    if (i < (int)separators_.size() && separators_[i]) {
       const std::string& hdr = labels_[i];
       if (!hdr.empty()) {
-        const size_t hlen = hdr.size();
-        const int hw = ui_font_.word_width(hdr.c_str(), hlen, FontStyle::Regular);
-        buf.draw_text_proportional((W - hw) / 2, y + baseline, hdr.c_str(), hlen, ui_font_, false);
+        const int hw = ui_font_.word_width(hdr.c_str(), hdr.size(), FontStyle::Regular);
+        buf.draw_text_proportional((W - hw) / 2, y + baseline, hdr.c_str(), hdr.size(), ui_font_, false);
         y += line_h;
       } else {
         y += line_h / 2;
       }
       continue;
     }
+
+    // Regular item
     const std::string& label_str = labels_[i];
     const char* label = label_str.c_str();
     size_t len = label_str.size();
@@ -241,7 +281,6 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     const int indent_px = align_left_ ? (32 + ((i < (int)indents_.size() ? indents_[i] : 0) * 20)) : 0;
     const int max_item_w = align_left_ ? (W - 32 - landscape_pad - indent_px) : (W - 100);
 
-    // Truncate with "..." if the label is too wide to fit.
     if (iw > max_item_w) {
       const int budget = max_item_w - ellipsis_w;
       size_t fit = 0;
@@ -264,38 +303,37 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     }
 
     const int ix = align_left_ ? indent_px : (W - iw) / 2;
-    const int iy = y;
     if (i == selected_) {
-      const int bar_w = 3;  // horizontal padding on each side (rounded cap adds 1 more)
-      const int sel_top = (font_size_idx_ == 1) ? iy : iy - 1;
+      const int bar_w = 3;
+      const int sel_top = (font_size_idx_ == 1) ? y : y - 1;
       const int bar_h = ui_font_.y_advance() + (font_size_idx_ == 1 ? 1 : 2) - 1;
-
       if (align_left_) {
-        // Full width bar for left-aligned
         const int bar_x = 16;
         const int bar_width = W - 32 - landscape_pad;
-        buf.fill_rect(bar_x + 1, sel_top, bar_width - 2, bar_h, false);          // Body
-        buf.fill_rect(bar_x, sel_top + 1, 1, bar_h - 2, false);                  // Left cap
-        buf.fill_rect(bar_x + bar_width - 1, sel_top + 1, 1, bar_h - 2, false);  // Right cap
-        buf.draw_text_proportional(ix, iy + baseline, label, len, ui_font_, true);
+        buf.fill_rect(bar_x + 1, sel_top, bar_width - 2, bar_h, false);
+        buf.fill_rect(bar_x, sel_top + 1, 1, bar_h - 2, false);
+        buf.fill_rect(bar_x + bar_width - 1, sel_top + 1, 1, bar_h - 2, false);
+        buf.draw_text_proportional(ix, y + baseline, label, len, ui_font_, true);
       } else {
         buf.fill_rect(ix - bar_w, sel_top, iw + bar_w * 2, bar_h, false);
         buf.fill_rect(ix - bar_w - 1, sel_top + 1, 1, bar_h - 2, false);
         buf.fill_rect(ix + iw + bar_w, sel_top + 1, 1, bar_h - 2, false);
-        buf.draw_text_proportional(ix, iy + baseline, label, len, ui_font_, true);
+        buf.draw_text_proportional(ix, y + baseline, label, len, ui_font_, true);
       }
     } else {
-      buf.draw_text_proportional(ix, iy + baseline, label, len, ui_font_, false);
+      buf.draw_text_proportional(ix, y + baseline, label, len, ui_font_, false);
     }
     y += line_h;
   }
 
-  // Scrollbar when items overflow. Left edge in landscape, right edge in portrait.
+  // ── Scrollbar ─────────────────────────────────────────────────────────────
   if (n > visible) {
     const int sb_w = 4;
     const int sb_x = (buf.rotation() == Rotation::Deg0) ? 8 : W - 12;
     const int sb_top = items_y - (font_size_idx_ == 1 ? 0 : 1);
-    const int sb_bottom = items_y + total_h - line_h + ui_font_.y_advance();
+    // total_h = N*line_h - kItemSpacing (trailing gap removed), so the bottom
+    // pixel of the last item's glyph is exactly items_y + total_h.
+    const int sb_bottom = items_y + total_h;
     const int sb_total_h = sb_bottom - sb_top;
     const int thumb_min = 20;
     const int thumb_h = std::max(sb_total_h * visible / n, thumb_min);
@@ -303,13 +341,10 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     const int max_scroll = n - visible;
     const int thumb_y = sb_top + (max_scroll > 0 ? track * scroll_offset_ / max_scroll : 0);
 
-    // Draw rounded scrollbar thumb (width 4)
-    buf.fill_rect(sb_x + 1, thumb_y, sb_w - 2, 1, false);                // Top cap
-    buf.fill_rect(sb_x, thumb_y + 1, sb_w, thumb_h - 2, false);          // Body
-    buf.fill_rect(sb_x + 1, thumb_y + thumb_h - 1, sb_w - 2, 1, false);  // Bottom cap
+    buf.fill_rect(sb_x + 1, thumb_y, sb_w - 2, 1, false);                // top cap
+    buf.fill_rect(sb_x, thumb_y + 1, sb_w, thumb_h - 2, false);          // body
+    buf.fill_rect(sb_x + 1, thumb_y + thumb_h - 1, sb_w - 2, 1, false);  // bottom cap
   }
-
-  draw_button_hints_(buf);
 }
 
 void ListMenuScreen::draw_button_hints_(DrawBuffer& buf) const {
