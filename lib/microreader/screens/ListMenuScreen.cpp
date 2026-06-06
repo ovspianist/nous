@@ -5,6 +5,7 @@
 
 #include "../Application.h"
 #include "../display/ui_font_header.h"
+#include "../display/ui_font_large.h"
 #include "../display/ui_font_medium.h"
 #include "../display/ui_font_small.h"
 
@@ -27,6 +28,8 @@ void ListMenuScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   ui_font_ = BitmapFont{};
   if (font_size_idx_ == 1)
     ui_font_.init(kFontData_ui_medium_mbf, kFontData_ui_medium_mbf_size);
+  else if (font_size_idx_ == 2)
+    ui_font_.init(kFontData_ui_large_mbf, kFontData_ui_large_mbf_size);
   else
     ui_font_.init(kFontData_ui_small_mbf, kFontData_ui_small_mbf_size);
   if (!header_font_.valid())
@@ -279,7 +282,7 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
 
     const int landscape_pad = (buf.rotation() == Rotation::Deg0) ? 10 : 0;
     const int indent_px = align_left_ ? (32 + ((i < (int)indents_.size() ? indents_[i] : 0) * 20)) : 0;
-    const int max_item_w = align_left_ ? (W - 32 - landscape_pad - indent_px) : (W - 100);
+    const int max_item_w = align_left_ ? (W - 32 - landscape_pad - indent_px) : (W - 48);
 
     if (iw > max_item_w) {
       const int budget = max_item_w - ellipsis_w;
@@ -305,8 +308,8 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
     const int ix = align_left_ ? indent_px : (W - iw) / 2;
     if (i == selected_) {
       const int bar_w = 3;
-      const int sel_top = (font_size_idx_ == 1) ? y : y - 1;
-      const int bar_h = ui_font_.y_advance() + (font_size_idx_ == 1 ? 1 : 2) - 1;
+      const int sel_top = (font_size_idx_ == 0) ? y - 1 : y;
+      const int bar_h = ui_font_.y_advance() + (font_size_idx_ == 0 ? 1 : 0);
       if (align_left_) {
         const int bar_x = 16;
         const int bar_width = W - 32 - landscape_pad;
@@ -330,7 +333,7 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
   if (n > visible) {
     const int sb_w = 4;
     const int sb_x = (buf.rotation() == Rotation::Deg0) ? 8 : W - 12;
-    const int sb_top = items_y - (font_size_idx_ == 1 ? 0 : 1);
+    const int sb_top = items_y - (font_size_idx_ == 0 ? 1 : 0);
     // total_h = N*line_h - kItemSpacing (trailing gap removed), so the bottom
     // pixel of the last item's glyph is exactly items_y + total_h.
     const int sb_bottom = items_y + total_h;

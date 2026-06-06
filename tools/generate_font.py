@@ -900,7 +900,7 @@ def main():
     p.add_argument(
         "size", nargs="?", type=int, default=20, help="Pixel size (default: 20)"
     )
-    p.add_argument("-o", "--output", required=True, help="Output .mbf file path")
+    p.add_argument("-o", "--output", required=False, help="Output .mbf file path (not required when --header is used)")
     p.add_argument(
         "--ranges",
         nargs="+",
@@ -957,6 +957,14 @@ def main():
     # Resolve font paths
     tools_dir = os.path.dirname(os.path.abspath(__file__))
     fonts_cache = os.path.join(tools_dir, ".font-cache")
+
+    # Validation: allow omitting --output when only generating a header.
+    if not args.output and not args.header:
+        print("ERROR: No output specified. Use -o/--output or --header to generate a header.")
+        sys.exit(1)
+    if args.bundle and not args.output:
+        print("ERROR: --bundle mode requires an output path via -o/--output.")
+        sys.exit(1)
 
     if args.font:
         font_path = args.font
@@ -1054,13 +1062,14 @@ def main():
             fallback_face=fallback_face,
         )
 
-    # Write output
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
-    with open(args.output, "wb") as f:
-        f.write(mbf_data)
-
-    # Stats
-    print(f"\nGenerated: {args.output}")
+    # Write output (optional if header-only)
+    if args.output:
+        os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
+        with open(args.output, "wb") as f:
+            f.write(mbf_data)
+        print(f"\nGenerated: {args.output}")
+    else:
+        print("\nGenerated MBF data in-memory (no .mbf file written)")
     if "num_styles" in stats:
         print(f"  Styles:   {stats['num_styles']} ({', '.join(stats['style_names'])})")
     print(f"  Ranges:   {stats['num_ranges']}")
@@ -1080,7 +1089,12 @@ def main():
             sample_chars = ["A", "B", "C", "a", "b", "c", "0", "1", "2"]
             face = freetype.Face(font_path)
             face.set_pixel_sizes(0, args.size)
-            out_dir = os.path.dirname(os.path.abspath(args.output)) or "."
+            if args.output:
+                out_dir = os.path.dirname(os.path.abspath(args.output)) or "."
+            elif args.header:
+                out_dir = os.path.dirname(os.path.abspath(args.header)) or "."
+            else:
+                out_dir = "."
             glyph_imgs = []
             glyph_sizes = []
             palette = [255, 200, 140, 80, 0]
@@ -1123,7 +1137,13 @@ def main():
 
     # Optional C++ header
     if args.header:
-        _write_cpp_header(args.header, mbf_data, os.path.basename(args.output))
+        if args.output:
+            name_for_header = os.path.basename(args.output)
+        else:
+            hdr_base = os.path.splitext(os.path.basename(args.header))[0]
+            hdr_base_no_font = hdr_base.replace("_font", "").replace("-font", "").replace("font_", "")
+            name_for_header = hdr_base_no_font.replace("_", "-") + ".mbf"
+        _write_cpp_header(args.header, mbf_data, name_for_header)
         print(f"  Header:   {args.header}")
 
 

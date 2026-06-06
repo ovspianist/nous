@@ -51,7 +51,7 @@ static std::string get_rotate_display_label(bool rotated) {
 }
 
 static std::string get_menu_font_label(int size) {
-  return std::string("Menu Size: ") + (size == 1 ? "Medium" : "Small");
+  return std::string("Menu Size: ") + (size == 0 ? "Small" : (size == 1 ? "Medium" : "Large"));
 }
 
 static std::string get_sleep_image_label(const std::string& path) {
@@ -342,7 +342,7 @@ void SettingsScreen::on_select(int index) {
   }
   if (index == idx_menu_font_) {
     if (app_) {
-      int v = (app_->menu_font_size() + 1) % 2;
+      int v = (app_->menu_font_size() + 1) % 3;
       app_->set_menu_font_size(v);
       restart();  // rebuilds items with the new font size immediately
     }

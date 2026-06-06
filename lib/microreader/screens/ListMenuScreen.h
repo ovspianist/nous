@@ -32,7 +32,7 @@ class ListMenuScreen : public IScreen {
   }
 
   // Global font size — affects all ListMenuScreen instances (static).
-  // 0 = Normal (14px), 1 = Large (18px), 2 = XLarge (22px)
+  // 0 = small (14px), 1 = medium (18px), 2 = large (24px)
   static void set_font_size(int size) {
     font_size_idx_ = size;
   }
