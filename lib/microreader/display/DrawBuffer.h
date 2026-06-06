@@ -26,11 +26,12 @@ enum class GrayPlane { BW, LSB, MSB };
 
 // Physical screen constants and bit-packed pixel helpers (used internally by DrawBuffer).
 struct DisplayFrame {
-  // The full size is 800x480 but we only use 788x480 to avoid the hidden areas.
-  static constexpr int kPhysicalWidth = 788;
+  static constexpr int kPhysicalWidth = 786;  // visible app-space width (panel has hidden area at the top and bottom)
+  static constexpr int kPanelOffsetX = 10;    // hidden columns at the left edge of the 800px panel
+  static constexpr int kPanelWidth = 800;
   static constexpr int kPhysicalHeight = 480;
-  static constexpr int kStride = (kPhysicalWidth + 7) / 8;
-  static constexpr std::size_t kPixelBytes = static_cast<std::size_t>(kStride) * kPhysicalHeight;
+  static constexpr int kStride = kPanelWidth / 8;  // 100 bytes/row (800 divisible by 8)
+  static constexpr std::size_t kPixelBytes = static_cast<std::size_t>(kStride) * kPhysicalHeight;  // 48000
 };
 
 // Display driver interface implemented by each platform.
@@ -204,14 +205,17 @@ class DrawBuffer {
     const uint16_t draw_bytes = static_cast<uint16_t>((draw_width + 7) / 8);
     uint8_t* buf = inactive_();
 
-    const uint16_t dest_offset_x = static_cast<uint16_t>(x / 8);
-    const uint8_t bit_offset = static_cast<uint8_t>(x & 7);
+    // Add panel offset so app-space x=0 maps to buffer column 12.
+    const uint16_t x_buf = static_cast<uint16_t>(x + DisplayFrame::kPanelOffsetX);
+    const uint16_t dest_offset_x = static_cast<uint16_t>(x_buf / 8);
+    const uint8_t bit_offset = static_cast<uint8_t>(x_buf & 7);
 
     auto set_pixel_physical = [&](uint16_t px, uint16_t py, bool white) {
       if (px >= DisplayFrame::kPhysicalWidth || py >= DisplayFrame::kPhysicalHeight)
         return;
-      size_t idx = static_cast<size_t>(py) * DisplayFrame::kStride + (px / 8);
-      uint8_t bit = static_cast<uint8_t>(0x80u >> (px & 7));
+      const uint16_t px_buf = static_cast<uint16_t>(px + DisplayFrame::kPanelOffsetX);
+      size_t idx = static_cast<size_t>(py) * DisplayFrame::kStride + (px_buf / 8);
+      uint8_t bit = static_cast<uint8_t>(0x80u >> (px_buf & 7));
       if (white)
         buf[idx] |= bit;
       else
@@ -254,8 +258,9 @@ class DrawBuffer {
       py = DisplayFrame::kPhysicalHeight - 1 - lx;
     }
     uint8_t* buf = inactive_();
-    const size_t bidx = static_cast<size_t>(py * DisplayFrame::kStride + px / 8);
-    const uint8_t bit = static_cast<uint8_t>(0x80u >> (px & 7));
+    const int px_buf = px + DisplayFrame::kPanelOffsetX;
+    const size_t bidx = static_cast<size_t>(py * DisplayFrame::kStride + px_buf / 8);
+    const uint8_t bit = static_cast<uint8_t>(0x80u >> (px_buf & 7));
     if (white)
       buf[bidx] |= bit;
     else
@@ -276,8 +281,9 @@ class DrawBuffer {
         col_end = DisplayFrame::kPhysicalWidth - lx;
       for (int col = col_start; col < col_end; ++col) {
         const int px = lx + col;
-        const size_t bidx = static_cast<size_t>(ly) * DisplayFrame::kStride + px / 8;
-        const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px & 7));
+        const int px_buf = px + DisplayFrame::kPanelOffsetX;
+        const size_t bidx = static_cast<size_t>(ly) * DisplayFrame::kStride + px_buf / 8;
+        const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px_buf & 7));
         const uint8_t clr_mask = static_cast<uint8_t>(~set_mask);
         const bool white = (data_1bit[col >> 3] >> (7 - (col & 7))) & 1;
         if (white)
@@ -289,8 +295,9 @@ class DrawBuffer {
       if (ly < 0 || ly >= kHeight || width <= 0)
         return;
       const int px = ly;
-      const int byte_col = px / 8;
-      const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px & 7));
+      const int px_buf = px + DisplayFrame::kPanelOffsetX;
+      const int byte_col = px_buf / 8;
+      const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px_buf & 7));
       const uint8_t clr_mask = static_cast<uint8_t>(~set_mask);
       // Clip x range to [0, kWidth)
       int col_start = 0, col_end = width;
@@ -625,7 +632,6 @@ class DrawBuffer {
   //   text         - label shown inside the box (e.g. "Converting...")
   //   progress_pct - 0-100; controls how much of the bar is filled
   void show_loading(const char* text, int progress_pct) {
-    static_assert((kLoadPhysX + 12) % 8 == 0, "kLoadPhysX + panel offset must be byte-aligned");
     if (display_.is_busy())
       return;  // skip if panel is still refreshing
     uint8_t new_buf[kLoadBufBytes];
@@ -635,14 +641,18 @@ class DrawBuffer {
 
  private:
   // Describes a render target: a pixel buffer with its own stride and physical offset/bounds.
-  // phys_x0 must be byte-aligned (multiple of 8).
+  // phys_x0 is used for clipping (app-space coordinates).
+  // buf_x0  is the app-space X that maps to buffer column 0 (for byte-index: col = x - buf_x0).
+  //   Full-frame buffer: buf_x0 = -kPanelOffsetX  (app X=0 → buffer column 12)
+  //   Mini loading-box:  buf_x0 = phys_x0         (local buffer, no panel offset)
   struct RenderTarget {
     uint8_t* buf;
     int stride;   // bytes per physical row
-    int phys_x0;  // absolute physical X of the left edge (byte-aligned)
+    int phys_x0;  // absolute physical X of the left edge for clipping (app space)
     int phys_y0;  // absolute physical Y of the top edge
-    int phys_w;   // width in pixels
+    int phys_w;   // width in pixels for clipping
     int phys_h;   // height in rows
+    int buf_x0;   // app-space X that maps to buffer column 0
   };
 
   static void draw_glyph_impl_(const RenderTarget& t, int x, int y, const uint8_t* bits, int bitmap_width,
@@ -670,9 +680,10 @@ class DrawBuffer {
       if (col_start >= col_end)
         return;
       // row range where px_local = lpx0 + row is in [0, phys_w):
-      const int lpx0 = gy - t.phys_x0;
-      const int row_lo = (lpx0 < 0) ? -lpx0 : 0;
-      const int row_hi = (lpx0 + bitmap_height > t.phys_w) ? t.phys_w - lpx0 : bitmap_height;
+      const int lpx0_clip = gy - t.phys_x0;
+      const int lpx0 = gy - t.buf_x0;
+      const int row_lo = (lpx0_clip < 0) ? -lpx0_clip : 0;
+      const int row_hi = (lpx0_clip + bitmap_height > t.phys_w) ? t.phys_w - lpx0_clip : bitmap_height;
       if (row_lo >= row_hi)
         return;
 
@@ -755,7 +766,7 @@ class DrawBuffer {
               continue;
             if (py < t.phys_y0 || py >= t.phys_y0 + t.phys_h)
               continue;
-            const int lpx = px - t.phys_x0;
+            const int lpx = px - t.buf_x0;
             const int lpy = py - t.phys_y0;
             const size_t bidx = static_cast<size_t>(lpy * t.stride + lpx / 8);
             const uint8_t bit = static_cast<uint8_t>(0x80u >> (lpx & 7));
@@ -789,13 +800,21 @@ class DrawBuffer {
   }
 
   // Render target for the full inactive buffer.
+  // buf_x0 = -kPanelOffsetX so that app-space X=0 maps to buffer column kPanelOffsetX.
   RenderTarget full_target_() {
-    return {inactive_(), DisplayFrame::kStride, 0, 0, DisplayFrame::kPhysicalWidth, DisplayFrame::kPhysicalHeight};
+    return {inactive_(),
+            DisplayFrame::kStride,
+            0,
+            0,
+            DisplayFrame::kPhysicalWidth,
+            DisplayFrame::kPhysicalHeight,
+            -DisplayFrame::kPanelOffsetX};
   }
 
   // Render target for the mini loading-box buffer (absolute physical coords of the box).
+  // buf_x0 = phys_x0 because the mini buffer is self-contained (no panel offset needed).
   static RenderTarget mini_target_(uint8_t* buf) {
-    return {buf, kLoadStride, kLoadPhysX, kLoadPhysY, kLoadPhysW, kLoadPhysH};
+    return {buf, kLoadStride, kLoadPhysX, kLoadPhysY, kLoadPhysW, kLoadPhysH, kLoadPhysX};
   }
 
   // Fill a physical horizontal span [x1, x2) on physical row `row` (absolute physical coords).
@@ -806,8 +825,8 @@ class DrawBuffer {
     if (x1 >= x2 || row < t.phys_y0 || row >= t.phys_y0 + t.phys_h)
       return;
     const int lrow = row - t.phys_y0;
-    const int lx1 = x1 - t.phys_x0;
-    const int lx2 = x2 - t.phys_x0;
+    const int lx1 = x1 - t.buf_x0;
+    const int lx2 = x2 - t.buf_x0;
     const int bx1 = lx1 / 8;
     const int bx2 = (lx2 - 1) / 8;
     const auto lmask = static_cast<uint8_t>(0xFF >> (lx1 & 7));
@@ -853,7 +872,7 @@ class DrawBuffer {
       return;
     const int lrow0 = py1 - t.phys_y0;
     const int lrow1 = py2 - t.phys_y0;
-    const int lpcol = pcol - t.phys_x0;
+    const int lpcol = pcol - t.buf_x0;
     const int bidx = lpcol / 8;
     const uint8_t bit = static_cast<uint8_t>(0x80u >> (lpcol & 7));
     for (int r = lrow0; r < lrow1; ++r) {
@@ -888,8 +907,7 @@ class DrawBuffer {
       const int tw = static_cast<int>(font.word_width(text, strlen(text), FontStyle::Regular));
       const int text_lx = kWidth / 2 - tw / 2;
       const int baseline_ly = kLoadLogY + 3 + static_cast<int>(font.baseline());
-      draw_text_impl_(t, text_lx, baseline_ly, text, strlen(text), font, GrayPlane::BW, false,
-                      FontStyle::Regular);
+      draw_text_impl_(t, text_lx, baseline_ly, text, strlen(text), font, GrayPlane::BW, false, FontStyle::Regular);
     }
 
     // Outline: 160x7, rounded corners (corner pixels stay white).
@@ -993,13 +1011,25 @@ inline int DrawBuffer::draw_text_plane(uint8_t* buf, int x, int baseline_y, cons
   const BitmapFont* f = fonts.get(size_pct);
   if (!f || !f->valid())
     return x;
-  const RenderTarget t{buf, DisplayFrame::kStride, 0, 0, DisplayFrame::kPhysicalWidth, DisplayFrame::kPhysicalHeight};
+  const RenderTarget t{buf,
+                       DisplayFrame::kStride,
+                       0,
+                       0,
+                       DisplayFrame::kPhysicalWidth,
+                       DisplayFrame::kPhysicalHeight,
+                       -DisplayFrame::kPanelOffsetX};
   return draw_text_impl_(t, x, baseline_y, text, len, *f, plane, white, style, rotation_);
 }
 
 inline void DrawBuffer::draw_layout_line(uint8_t* buf, int x_offset, int baseline_y, const PageLine& line,
                                          const BitmapFontSet& fonts, GrayPlane plane, bool white) {
-  const RenderTarget t{buf, DisplayFrame::kStride, 0, 0, DisplayFrame::kPhysicalWidth, DisplayFrame::kPhysicalHeight};
+  const RenderTarget t{buf,
+                       DisplayFrame::kStride,
+                       0,
+                       0,
+                       DisplayFrame::kPhysicalWidth,
+                       DisplayFrame::kPhysicalHeight,
+                       -DisplayFrame::kPanelOffsetX};
 
   // State for the current underline span (BW plane only).
   int ul_x0 = 0, ul_x1 = 0, ul_y = 0, ul_h = 0;

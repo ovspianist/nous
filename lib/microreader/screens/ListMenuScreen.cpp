@@ -15,8 +15,12 @@ int ListMenuScreen::font_size_idx_ = 0;
 
 static constexpr int kHeaderY = 15;         // top padding before the title text
 static constexpr int kHeaderBottomGap = 4;  // gap between last header line and first list item
-static constexpr int kBottomPadding = 16;   // list padding from bottom
-static constexpr int kButtonHintsH = 26;    // height of the button hint area
+// The hint row (nav glyphs + battery bar) is centred on a line kHintCenterY pixels above the
+// screen bottom.  kBottomEdgePad is the gap from that centre line to the absolute screen edge.
+// kBottomAreaH (= centre + pad) is the total reserved strip; the list stays above it.
+static constexpr int kHintCenterY = 8;     // px from screen bottom to centre of the hint row
+static constexpr int kBottomEdgePad = 11;  // px from hint centre to absolute screen edge
+static constexpr int kBottomAreaH = kHintCenterY + kBottomEdgePad;
 static constexpr int kSubtitleGap = 3;      // gap between bottom of title block and first subtitle
 static constexpr int kSubtitleSpacing = 6;  // extra pixels between consecutive subtitles (added to y_advance)
 static constexpr int kItemSpacing = 6;      // vertical gap between list item rows
@@ -60,7 +64,7 @@ void ListMenuScreen::ensure_visible_() {
     return;
   const int line_h = ui_font_.y_advance() + kItemSpacing;
   const int header_h = compute_header_h_();
-  const int available_h = buf_->height() - header_h - kBottomPadding;
+  const int available_h = buf_->height() - header_h - kBottomAreaH;
   // N items occupy N*y_advance + (N-1)*kItemSpacing = N*line_h - kItemSpacing pixels.
   // So max N where that fits: N <= (available_h + kItemSpacing) / line_h.
   const int visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
@@ -86,7 +90,7 @@ void ListMenuScreen::center_on_selected_() {
     return;
   const int line_h = ui_font_.y_advance() + kItemSpacing;
   const int header_h = compute_header_h_();
-  const int available_h = buf_->height() - header_h - kBottomPadding;
+  const int available_h = buf_->height() - header_h - kBottomAreaH;
   const int visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
   if (visible <= 0)
     return;
@@ -108,7 +112,7 @@ void ListMenuScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
   const int H = buf.height();
   buf.fill(true);
   const int header_h = draw_header_(buf, W, H);
-  const int bottom_h = draw_bottom_(buf, W, H, battery_pct);
+  const int bottom_h = draw_bottom_(buf, W, H, battery_pct);  // == kBottomAreaH
   draw_list_(buf, W, H, header_h, bottom_h);
 }
 
@@ -180,7 +184,7 @@ int ListMenuScreen::draw_bottom_(DrawBuffer& buf, int W, int H, std::optional<ui
     const int kBarW = 26;
     const int kBarH = 8;
     const int kBarX = (W - kBarW) / 2;
-    const int kBarY = H - kBarH - 4;
+    const int kBarY = H - kHintCenterY - kBarH / 2;  // centre the bar on the hint line
 
     // Outline: rounded corners.
     buf.fill_rect(kBarX + 1, kBarY, kBarW - 2, 1, false);
@@ -200,7 +204,7 @@ int ListMenuScreen::draw_bottom_(DrawBuffer& buf, int W, int H, std::optional<ui
   }
 
   draw_button_hints_(buf);
-  return kBottomPadding;
+  return kBottomAreaH;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +226,7 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
   // ── Layout metrics ────────────────────────────────────────────────────────
   const int line_h = ui_font_.y_advance() + kItemSpacing;  // height per item slot
   const int baseline = ui_font_.baseline();
-  const int available_h = H - header_h - bottom_h;
+  const int available_h = H - header_h - bottom_h;  // bottom_h == kBottomAreaH
   // N items need N*y_advance + (N-1)*kItemSpacing = N*line_h - kItemSpacing pixels.
   // Rearranging: N = (available_h + kItemSpacing) / line_h.
   const int visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
@@ -252,6 +256,15 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
   //   const int ind_x = (W - ind_w) / 2;
   //   buf.fill_rect(ind_x, header_h, ind_w, 1, false);          // top bound
   //   buf.fill_rect(ind_x, H - bottom_h - 1, ind_w, 1, false);  // bottom bound
+  // }
+
+  // ── DEBUG: corner rectangles at screen edges ─────────────────────────────
+  // {
+  //   const int s = 8;
+  //   buf.fill_rect(0, 0, s, s, false);          // top-left
+  //   buf.fill_rect(W - s, 0, s, s, false);      // top-right
+  //   buf.fill_rect(0, H - s, s, s, false);      // bottom-left
+  //   buf.fill_rect(W - s, H - s, s, s, false);  // bottom-right
   // }
 
   // ── Item rendering ────────────────────────────────────────────────────────
@@ -374,7 +387,7 @@ void ListMenuScreen::draw_button_hints_(DrawBuffer& buf) const {
   for (int i = 0; i < 4; ++i) {
     const int lw = ui_font_.word_width(kLabels[i], kLens[i], FontStyle::Regular);
     if (!sideways) {
-      const int text_x = W - kButtonHintsH / 2 - lw / 2;
+      const int text_x = W - kHintCenterY - lw / 2;
       // In landscape, if derived from portrait by rotating -90 deg,
       // the original left button (X=0) becomes the bottom right button (Y=MAX).
       // So we map i -> 3 - i if we need to reverse the order on the Y axis
@@ -383,7 +396,10 @@ void ListMenuScreen::draw_button_hints_(DrawBuffer& buf) const {
       const int text_y = btns[mapped_i] - ui_font_.y_advance() / 2 + baseline;
       buf.draw_text_proportional(text_x, text_y, kLabels[i], kLens[i], ui_font_, false);
     } else {
-      const int text_y = H - kButtonHintsH / 2 - ui_font_.y_advance() / 2 + baseline + 5;
+      // Per-size vertical nudge to keep glyphs visually centred on kHintCenterY.
+      static constexpr int kHintGlyphNudge[3] = {1, 0, 0};
+      const int nudge = kHintGlyphNudge[std::min(font_size_idx_, 2)];
+      const int text_y = H - kHintCenterY - (ui_font_.y_advance() + 1) / 2 + baseline + nudge;
       buf.draw_text_proportional(btns[i] - lw / 2, text_y, kLabels[i], kLens[i], ui_font_, false);
     }
   }

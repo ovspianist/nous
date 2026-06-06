@@ -126,7 +126,7 @@ enum EpdRefreshMode { EPD_FULL_REFRESH, EPD_HALF_REFRESH, EPD_FAST_REFRESH };
 
 class EInkDisplay : public microreader::IDisplay {
  public:
-  static constexpr uint16_t DISPLAY_WIDTH = microreader::DisplayFrame::kPhysicalWidth;
+  static constexpr uint16_t DISPLAY_WIDTH = microreader::DisplayFrame::kPanelWidth;  // 800 (full panel)
   static constexpr uint16_t DISPLAY_HEIGHT = microreader::DisplayFrame::kPhysicalHeight;
   static constexpr uint16_t DISPLAY_WIDTH_BYTES = microreader::DisplayFrame::kStride;
   static constexpr uint32_t BUFFER_SIZE = microreader::DisplayFrame::kPixelBytes;
@@ -211,8 +211,8 @@ class EInkDisplay : public microreader::IDisplay {
     in_grayscale_mode_ = false;  // full refresh resets display state
     wakeIfNeeded();
     waitWhileBusy();
-    // parts of the screen are not visible so we offset the image
-    setRamArea(12, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    // Buffer covers all 800 columns; panel offset is baked into draw-function coordinates.
+    setRamArea(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     writeRamBuffer(CMD_WRITE_RAM_BW, pixels, BUFFER_SIZE);
     writeRamBuffer(CMD_WRITE_RAM_RED, pixels, BUFFER_SIZE);
     refreshDisplay(mode == microreader::RefreshMode::Half ? EPD_HALF_REFRESH : EPD_FULL_REFRESH, turnOffScreen);
@@ -223,13 +223,13 @@ class EInkDisplay : public microreader::IDisplay {
       grayscale_revert_();
       wakeIfNeeded();
       waitWhileBusy();
-      setRamArea(12, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+      setRamArea(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
       writeRamBuffer(CMD_WRITE_RAM_RED, prev_pixels, BUFFER_SIZE);
     }
 
     wakeIfNeeded();
     waitWhileBusy();
-    setRamArea(12, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    setRamArea(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     writeRamBuffer(CMD_WRITE_RAM_BW, new_pixels, BUFFER_SIZE);
     refreshDisplay(EPD_FAST_REFRESH);
   }
@@ -237,14 +237,14 @@ class EInkDisplay : public microreader::IDisplay {
   void write_ram_bw(const uint8_t* data) override {
     wakeIfNeeded();
     waitWhileBusy();
-    setRamArea(12, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    setRamArea(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     writeRamBuffer(CMD_WRITE_RAM_BW, data, BUFFER_SIZE);
   }
 
   void write_ram_red(const uint8_t* data) override {
     wakeIfNeeded();
     waitWhileBusy();
-    setRamArea(12, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    setRamArea(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     writeRamBuffer(CMD_WRITE_RAM_RED, data, BUFFER_SIZE);
   }
 
@@ -278,7 +278,7 @@ class EInkDisplay : public microreader::IDisplay {
     // what was on screen before grayscale, enabling correct partial update.
     wakeIfNeeded();
     waitWhileBusy();
-    setRamArea(12, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    setRamArea(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     writeRamBuffer(CMD_WRITE_RAM_RED, prev_pixels, BUFFER_SIZE);
   }
 
@@ -482,10 +482,11 @@ class EInkDisplay : public microreader::IDisplay {
 
   void clearDisplay() {
     sendCommand(CMD_AUTO_WRITE_BW_RAM);
-    sendData(0xF7);
+    sendData(0x77);
     waitWhileBusy("CMD_AUTO_WRITE_BW_RAM");
+
     sendCommand(CMD_AUTO_WRITE_RED_RAM);
-    sendData(0xF7);
+    sendData(0x77);
     waitWhileBusy("CMD_AUTO_WRITE_RED_RAM");
   }
 
