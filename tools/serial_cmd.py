@@ -20,15 +20,14 @@ Interactive commands:
     down / next       Alias for btn 2
     up / prev         Alias for btn 3
     status / st       Query heap status
-    books / ls        List books on SD card
-    open <path>       Open book by full path (e.g. /sdcard/books/alice.epub)
-    open <name>       Open book by filename (auto-prepends /sdcard/books/)
+    books / ls        List books on SD card (full paths)
+    open <path>       Open book by full path
     test [filter] [--clean] [-v] [--timeout N]
                       Test books: open each and watch for BOOK_OK/BOOK_FAIL.
                       --clean deletes .mrb files first (tests full conversion).
                       filter narrows to books whose filename contains the string.
     clear             Delete all .mrb files on the device
-    rm <path>         Delete a file by full path (e.g. rm /sdcard/books/book.epub)
+    rm <path>         Delete a file by full path
     upload <file>     Upload an EPUB file to the device
     bench <book>      Run full EPUB conversion benchmark for a book
     imgsize <book>    Run image format+size benchmark for a book
@@ -461,8 +460,9 @@ def run_test(
     results: dict[str, list[str]] = {"OK": [], "FAIL": [], "TIMEOUT": []}
 
     for i, book in enumerate(test_books, 1):
-        path = f"/sdcard/books/{book}"
-        print(f"[{i}/{len(test_books)}] {book} ... ", end="", flush=True)
+        path = book
+        display = book.rsplit("/", 1)[-1]
+        print(f"[{i}/{len(test_books)}] {display} ... ", end="", flush=True)
         drain(ser)
         path_bytes = path.encode("utf-8")
         ser.write(MAGIC + b"O" + struct.pack("<H", len(path_bytes)) + path_bytes)
@@ -653,7 +653,8 @@ def main():
             ser.close()
             sys.exit(1)
         existing = set(send_list_books_raw(ser))
-        to_upload = [fp for fp in epubs if fp.name not in existing]
+        existing_names = {p.rsplit("/", 1)[-1] for p in existing}
+        to_upload = [fp for fp in epubs if fp.name not in existing_names]
         skipped = len(epubs) - len(to_upload)
         if skipped:
             print(f"Skipping {skipped} file(s) already on device")
@@ -749,8 +750,6 @@ def main():
     if args.bench:
         # --- Benchmark mode ---
         path = args.bench
-        if not path.startswith("/"):
-            path = f"/sdcard/books/{path}"
         capture_file = args.capture  # optional, may be None
         timeout = args.timeout
         done_marker = "BENCHMARK DONE"
@@ -802,14 +801,15 @@ def main():
         summary = []
         done_marker = "BENCHMARK DONE"
         for epub in epubs:
-            path = f"/sdcard/books/{epub}"
-            print(f"=== {epub} ===")
+            path = epub
+            name = epub.rsplit("/", 1)[-1]
+            print(f"=== {name} ===")
             drain(ser)
             resp = send_bench(ser, path)
             print(f"  {resp}")
             if not resp.startswith("OK") and not resp.endswith("OK"):
                 print(f"  SKIP (no OK response)")
-                summary.append((epub, "SKIP", "", "", "", "", ""))
+                summary.append((name, "SKIP", "", "", "", "", ""))
                 continue
             # Collect output until done marker
             opn = conv = seek = decomp = build = write = ""
@@ -843,7 +843,7 @@ def main():
                     break
             else:
                 print("  --- Timeout ---")
-            summary.append((epub, opn, conv, seek, decomp, build, write))
+            summary.append((name, opn, conv, seek, decomp, build, write))
             print()
 
         # Print summary table
@@ -875,8 +875,9 @@ def main():
             sys.exit(1)
         print(f"Found {len(epubs)} epub(s): {', '.join(epubs)}\n")
         for epub in epubs:
-            path = f"/sdcard/books/{epub}"
-            print(f"--- imgbench: {epub} ---")
+            path = epub
+            name = epub.rsplit("/", 1)[-1]
+            print(f"--- imgbench: {name} ---")
             drain(ser)
             resp = send_imgbench(ser, path)
             print(resp)
@@ -902,8 +903,6 @@ def main():
     if args.imgbench:
         # --- Image-size benchmark mode ---
         path = args.imgbench
-        if not path.startswith("/"):
-            path = f"/sdcard/books/{path}"
         capture_file = args.capture
         timeout = args.timeout
         done_marker = "IMAGE SIZE BENCH DONE"
@@ -941,8 +940,6 @@ def main():
     if args.imgdecode:
         # --- Image decode test mode ---
         path = args.imgdecode
-        if not path.startswith("/"):
-            path = f"/sdcard/books/{path}"
         capture_file = args.capture
         timeout = args.timeout
         done_marker = "IMAGE DECODE TEST DONE"
@@ -1042,17 +1039,14 @@ def main():
                 print(send_list_books(ser))
             elif verb == "open":
                 if not arg:
-                    print("Usage: open <path_or_filename>")
+                    print("Usage: open <path>")
                     continue
-                path = arg
-                if not path.startswith("/"):
-                    path = f"/sdcard/books/{path}"
-                print(send_open(ser, path))
+                print(send_open(ser, arg.strip('"\'')))
             elif verb == "rm":
                 if not arg:
                     print("Usage: rm <path>")
                     continue
-                print(send_remove_file(ser, arg))
+                print(send_remove_file(ser, arg.strip('"\'')))
             elif verb == "test":
                 targs = arg.split()
                 clean = "--clean" in targs
@@ -1120,13 +1114,10 @@ def main():
                 upload_font_sd(ser, fp)
             elif verb == "bench":
                 if not arg:
-                    print("Usage: bench <path_or_filename>")
+                    print("Usage: bench <path>")
                     continue
-                path = arg
-                if not path.startswith("/"):
-                    path = f"/sdcard/books/{path}"
-                print(f"Sending bench request for {path} ...")
-                resp = send_bench(ser, path)
+                print(f"Sending bench request for {arg} ...")
+                resp = send_bench(ser, arg)
                 print(resp)
                 if resp.startswith("OK"):
                     print(
@@ -1135,13 +1126,10 @@ def main():
                     print("(Use --capture to save logs, or just watch the terminal.)")
             elif verb == "imgsize":
                 if not arg:
-                    print("Usage: imgsize <path_or_filename>")
+                    print("Usage: imgsize <path>")
                     continue
-                path = arg
-                if not path.startswith("/"):
-                    path = f"/sdcard/books/{path}"
-                print(f"Sending image-size benchmark request for {path} ...")
-                resp = send_imgbench(ser, path)
+                print(f"Sending image-size benchmark request for {arg} ...")
+                resp = send_imgbench(ser, arg)
                 print(resp)
                 if resp.startswith("OK"):
                     print(
@@ -1150,13 +1138,10 @@ def main():
                     print("Done when: '=== IMAGE SIZE BENCH DONE' appears in the log.")
             elif verb == "imgdecode":
                 if not arg:
-                    print("Usage: imgdecode <path_or_filename>")
+                    print("Usage: imgdecode <path>")
                     continue
-                path = arg
-                if not path.startswith("/"):
-                    path = f"/sdcard/books/{path}"
-                print(f"Sending image decode test for {path} ...")
-                resp = send_imgdecode(ser, path)
+                print(f"Sending image decode test for {arg} ...")
+                resp = send_imgdecode(ser, arg)
                 print(resp)
                 if resp.startswith("OK"):
                     print(

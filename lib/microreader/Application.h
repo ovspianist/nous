@@ -167,6 +167,18 @@ class Application {
     save_settings_();
   }
 
+  BookSortOrder sort_order() const {
+    return menu_.sort_order();
+  }
+  void set_sort_order(BookSortOrder order) {
+    menu_.set_sort_order(order);
+    save_settings_();
+  }
+
+  // Called by MainMenu when the user opens a book: updates the open-order
+  // counter in the index and persists both the index and settings.
+  void record_book_opened(const std::string& path);
+
   // Navigate to a screen: push on top of the current screen (current stays on stack).
   // Or replace the current screen (pop it first, then push the new one).
   // safe to call from within a screen's update(); the transition happens after update() returns.
@@ -213,6 +225,7 @@ class Application {
   bool invert_side_buttons_ = false;
   bool rotate_display_ = false;
   int menu_font_size_ = 0;
+  uint32_t open_counter_ = 0;  // monotonically increasing; incremented each time a book is opened
 
   std::string custom_font_path_;
   std::string installed_font_path_;

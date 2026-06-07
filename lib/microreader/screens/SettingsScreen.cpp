@@ -38,6 +38,10 @@ static std::string get_side_paging_label(bool inverted) {
   return std::string("Side Paging: ") + (inverted ? "Top=Prev" : "Top=Next");
 }
 
+static std::string get_sort_order_label(BookSortOrder order) {
+  return std::string("Sort: ") + (order == BookSortOrder::ByLastOpened ? "Last Opened" : "By Name");
+}
+
 static std::string get_list_format_label(BookListFormat fmt) {
   if (fmt == BookListFormat::TitleOnly)
     return "Book List: Title";
@@ -193,6 +197,9 @@ void SettingsScreen::on_start() {
     add_item("List: Title");
   }
 
+  idx_sort_order_ = count();
+  add_item(get_sort_order_label(app_ ? app_->sort_order() : BookSortOrder::ByName));
+
   idx_font_ = count();
   add_item(get_font_label(sd_fonts_[font_sel_idx_]));
 
@@ -288,6 +295,14 @@ void SettingsScreen::on_select(int index) {
       BookIndex::instance().save(index_path);
       buf_->reset_after_scratch(true);
       app_->pop_screen();  // go back to main menu
+    }
+    return;
+  }
+  if (index == idx_sort_order_) {
+    if (app_) {
+      BookSortOrder order = (app_->sort_order() == BookSortOrder::ByName) ? BookSortOrder::ByLastOpened : BookSortOrder::ByName;
+      app_->set_sort_order(order);
+      set_item_label(idx_sort_order_, get_sort_order_label(order));
     }
     return;
   }

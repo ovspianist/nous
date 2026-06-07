@@ -42,7 +42,7 @@ bool BookIndex::load(const std::string& index_file) {
       len--;
     }
 
-    // Format: path|title|author
+    // Format: path|title|author[|last_open_order]
     char* sep1 = std::strchr(line, '|');
     if (!sep1)
       continue;
@@ -55,7 +55,16 @@ bool BookIndex::load(const std::string& index_file) {
     BookIndexEntry entry;
     entry.path = line;
     entry.title = sep1 + 1;
-    entry.author = sep2 + 1;
+
+    // Optional 4th field: last_open_order
+    char* sep3 = std::strchr(sep2 + 1, '|');
+    if (sep3) {
+      *sep3 = '\0';
+      entry.author = sep2 + 1;
+      entry.last_open_order = static_cast<uint32_t>(std::strtoul(sep3 + 1, nullptr, 10));
+    } else {
+      entry.author = sep2 + 1;
+    }
 
     if (!entry.title.empty()) {
       entry.label = entry.title;
@@ -90,10 +99,20 @@ bool BookIndex::save(const std::string& index_file) const {
     return false;
 
   for (const auto& entry : entries_) {
-    std::fprintf(f, "%s|%s|%s\n", entry.path.c_str(), entry.title.c_str(), entry.author.c_str());
+    std::fprintf(f, "%s|%s|%s|%u\n", entry.path.c_str(), entry.title.c_str(), entry.author.c_str(),
+                 static_cast<unsigned>(entry.last_open_order));
   }
   std::fclose(f);
   return true;
+}
+
+void BookIndex::set_last_opened(const std::string& path, uint32_t order) {
+  for (auto& entry : entries_) {
+    if (entry.path == path) {
+      entry.last_open_order = order;
+      return;
+    }
+  }
 }
 
 void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {

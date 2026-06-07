@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <cstring>
 
 #include "../Input.h"
@@ -9,6 +10,7 @@
 namespace microreader {
 
 enum class BookListFormat { TitleOnly, TitleAndAuthor, Filename };
+enum class BookSortOrder { ByName, ByLastOpened };
 
 // Main screen — lists EPUB books from a directory.
 // Button1 = open book, Button0 = settings.
@@ -59,6 +61,13 @@ class MainMenu final : public ListMenuScreen {
     list_format_ = format;
   }
 
+  BookSortOrder sort_order() const {
+    return sort_order_;
+  }
+  void set_sort_order(BookSortOrder order) {
+    sort_order_ = order;
+  }
+
   void set_app(Application* app) {
     app_ = app;
   }
@@ -66,6 +75,14 @@ class MainMenu final : public ListMenuScreen {
   void start(DrawBuffer& buf, IRuntime& runtime) override {
     buf_ = &buf;
     ListMenuScreen::start(buf, runtime);
+  }
+
+  void stop() override {
+    // Snapshot the highlighted path before the list is torn down,
+    // so we can restore the cursor on the next start().
+    const std::string& cur = current_book_path();
+    if (!cur.empty())
+      initial_selection_ = cur;
   }
 
   void update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) override;
@@ -81,11 +98,13 @@ class MainMenu final : public ListMenuScreen {
   std::string last_selected_path_;  // path of the most recently opened book
   DrawBuffer* buf_ = nullptr;
   BookListFormat list_format_ = BookListFormat::TitleOnly;
+  BookSortOrder sort_order_ = BookSortOrder::ByName;
   bool needs_scan_ = false;
 
   struct BookEntry {
     std::string path;
     std::string label;
+    uint32_t last_open_order = 0;
   };
   std::vector<BookEntry> entries_;
 

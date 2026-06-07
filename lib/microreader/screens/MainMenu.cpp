@@ -1,5 +1,6 @@
 #include "MainMenu.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -51,6 +52,7 @@ void MainMenu::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& run
 
 void MainMenu::on_select(int index) {
   last_selected_path_ = entries_[index].path;
+  app_->record_book_opened(entries_[index].path);
   app_->reader()->set_path(entries_[index].path.c_str());
   app_->push_screen(ScreenId::Reader);
 }
@@ -107,10 +109,25 @@ void MainMenu::populate_list_() {
     }
 
     entries_.push_back(std::move(e));
-    add_item(entries_.back().label);
+    entries_.back().last_open_order = index_entry.last_open_order;
   }
 
-  // Restore previously selected book position — only on first visit.
+  // Sort the list according to sort_order_.
+  // We need to re-sync items_ in ListMenuScreen after sorting, so we rebuild
+  // it from scratch after the sort rather than calling add_item() before sort.
+  if (sort_order_ == BookSortOrder::ByLastOpened) {
+    std::stable_sort(entries_.begin(), entries_.end(),
+                     [](const BookEntry& a, const BookEntry& b) { return a.last_open_order > b.last_open_order; });
+  } else {
+    std::stable_sort(entries_.begin(), entries_.end(),
+                     [](const BookEntry& a, const BookEntry& b) { return a.label < b.label; });
+  }
+  // Rebuild the list-menu items after sort.
+  clear_items();
+  for (const auto& e : entries_)
+    add_item(e.label);
+
+  // Restore cursor to the saved path.
   if (!initial_selection_.empty()) {
     for (int i = 0; i < static_cast<int>(entries_.size()); ++i) {
       if (entries_[i].path == initial_selection_) {

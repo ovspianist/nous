@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,7 @@ struct BookIndexEntry {
   std::string title;
   std::string author;
   std::string label;
+  uint32_t last_open_order = 0;  // 0 = never opened; higher = more recently opened
 };
 
 class BookIndex {
@@ -28,6 +30,11 @@ class BookIndex {
   const std::vector<BookIndexEntry>& entries() const {
     return entries_;
   }
+
+  // Record that a book was opened. `order` should be a monotonically
+  // increasing counter (higher = more recently opened). Updates the in-memory
+  // entry only; call save() afterwards to persist.
+  void set_last_opened(const std::string& path, uint32_t order);
 
   void clear_entries() {
     entries_.clear();

@@ -33,6 +33,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <queue>
+#include <string>
+
+#include "microreader/content/BookIndex.h"
 
 #ifdef QEMU_BUILD
 #include "driver/uart.h"
@@ -457,41 +461,35 @@ static void handle_serial_cmd() {
       break;
     }
     case 'L': {
-      DIR* dir = opendir("/sdcard/books");
-      if (!dir) {
-        serial_write("ERR:no_books_dir\n");
-        return;
-      }
       serial_write("BOOKS:\n");
-      struct dirent* ent;
-      while ((ent = readdir(dir)) != nullptr) {
-        size_t len = strlen(ent->d_name);
-        if (len > 5 && strcmp(ent->d_name + len - 5, ".epub") == 0) {
-          char line[280];
-          snprintf(line, sizeof(line), "  %s\n", ent->d_name);
-          serial_write(line);
+      // Try in-memory index first (populated by main task after boot).
+      // Fall back to reading the index file directly if not loaded yet
+      // (serial task runs concurrently and may arrive before MainMenu::on_start).
+      const auto& entries = microreader::BookIndex::instance().entries();
+      if (!entries.empty()) {
+        for (const auto& e : entries) {
+          std::string out = "  " + e.path + "\n";
+          serial_write(out.c_str());
         }
-      }
-      closedir(dir);
-      // Also list converted books from /sdcard/.microreader/cache/
-      DIR* cdir = opendir("/sdcard/.microreader/cache");
-      if (cdir) {
-        struct dirent* cent;
-        while ((cent = readdir(cdir)) != nullptr) {
-          if (cent->d_name[0] == '.')
-            continue;
-          // Check if book.mrb exists in this subdir.
-          char mrb_path[300];
-          snprintf(mrb_path, sizeof(mrb_path), "/sdcard/.microreader/cache/%s/book.mrb", cent->d_name);
-          FILE* f = fopen(mrb_path, "r");
-          if (f) {
-            fclose(f);
-            char line[300];
-            snprintf(line, sizeof(line), "  cache/%s/book.mrb\n", cent->d_name);
-            serial_write(line);
+      } else {
+        FILE* idx = fopen("/sdcard/.microreader/book_index.dat", "r");
+        if (idx) {
+          char line[1024];
+          while (fgets(line, sizeof(line), idx)) {
+            char* sep = strchr(line, '|');
+            if (sep)
+              *sep = '\0';
+            size_t len = strlen(line);
+            while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+              line[--len] = '\0';
+            if (len == 0)
+              continue;
+            char out[1040];
+            snprintf(out, sizeof(out), "  %s\n", line);
+            serial_write(out);
           }
+          fclose(idx);
         }
-        closedir(cdir);
       }
       serial_write("END\n");
       break;

@@ -5,6 +5,7 @@
 #include <ctime>
 
 #include "HeapLog.h"
+#include "content/BookIndex.h"
 
 #ifdef ESP_PLATFORM
 #include <dirent.h>
@@ -302,6 +303,8 @@ void microreader::Application::save_settings_() {
 
   // Menu list format
   std::fprintf(f, "list_format=%u\n", static_cast<unsigned>(menu_.list_format()));
+  std::fprintf(f, "sort_order=%u\n", static_cast<unsigned>(menu_.sort_order()));
+  std::fprintf(f, "open_counter=%u\n", static_cast<unsigned>(open_counter_));
   std::fprintf(f, "inv_menu=%u\n", invert_menu_buttons_ ? 1u : 0u);
   std::fprintf(f, "inv_bpage=%u\n", invert_bottom_paging_ ? 1u : 0u);
   std::fprintf(f, "inv_side=%u\n", invert_side_buttons_ ? 1u : 0u);
@@ -318,7 +321,14 @@ void microreader::Application::save_settings_() {
 
   std::fclose(f);
 }
-
+void microreader::Application::record_book_opened(const std::string& path) {
+  BookIndex::instance().set_last_opened(path, ++open_counter_);
+  if (data_dir_) {
+    std::string index_path = std::string(data_dir_) + "/book_index.dat";
+    BookIndex::instance().save(index_path);
+  }
+  save_settings_();
+}
 void microreader::Application::load_settings_() {
   if (settings_path_.empty())
     return;
@@ -371,6 +381,10 @@ void microreader::Application::load_settings_() {
       rs.font_size_idx = uval < kMaxFontSizes ? static_cast<uint8_t>(uval) : 1;
     else if (std::sscanf(line, "list_format=%u", &uval) == 1)
       menu_.set_list_format(uval <= 2 ? static_cast<BookListFormat>(uval) : BookListFormat::TitleAndAuthor);
+    else if (std::sscanf(line, "sort_order=%u", &uval) == 1)
+      menu_.set_sort_order(uval == 1 ? BookSortOrder::ByLastOpened : BookSortOrder::ByName);
+    else if (std::sscanf(line, "open_counter=%u", &uval) == 1)
+      open_counter_ = uval;
     else if (std::sscanf(line, "inv_menu=%u", &uval) == 1)
       invert_menu_buttons_ = (uval != 0);
     else if (std::sscanf(line, "inv_bpage=%u", &uval) == 1)
