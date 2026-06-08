@@ -219,7 +219,7 @@ TEST_F(RealBookTest, Bobiverse_TOC) {
   // Typically has TOC entries
   printf("  TOC entries: %zu\n", toc.entries.size());
   for (size_t i = 0; i < std::min(toc.entries.size(), size_t(5)); ++i) {
-    printf("    [%zu] %s\n", i, std::string(toc.label_of(toc.entries[i])).c_str());
+    printf("    [%zu] %s\n", i, toc.entries[i].label.to_string().c_str());
   }
 }
 
@@ -662,7 +662,7 @@ TEST_F(RealBookTest, Tress1_TOC) {
   for (size_t i = 0; i < toc.entries.size(); ++i) {
     const auto& e = toc.entries[i];
     printf("    [%zu] depth=%u file_idx=%u label='%s'\n", i, (unsigned)e.depth, (unsigned)e.file_idx,
-           std::string(toc.label_of(e)).c_str());
+           e.label.to_string().c_str());
   }
 }
 

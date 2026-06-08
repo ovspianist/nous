@@ -324,8 +324,21 @@ bool MrbWriter::finish(const EpubMetadata& meta, const TableOfContents& toc,
   mrb_write_u16(toc_hdr, toc_count);
   write_bytes(toc_hdr, 2);
   for (const auto& entry : toc.entries) {
-    auto lbl = toc.label_of(entry);
-    write_string(std::string(lbl));
+    auto lbl = entry.label.to_string();
+    // Defensive: ensure label fits u16 length field
+    if (lbl.size() > 0xFFFF) {
+#ifdef ESP_PLATFORM
+      ESP_LOGE(kMrbTag, "TOC label too long (%zu bytes)", lbl.size());
+#endif
+      return false;
+    }
+    if (!write_string(lbl)) {
+      int e = errno;
+#ifdef ESP_PLATFORM
+      ESP_LOGE(kMrbTag, "write_string failed for TOC label (len=%zu) errno=%d (%s)", lbl.size(), e, strerror(e));
+#endif
+      return false;
+    }
     uint8_t buf[5];
     mrb_write_u16(buf, entry.file_idx);
     buf[2] = entry.depth;

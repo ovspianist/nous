@@ -74,7 +74,7 @@ TEST_F(EpubTest, MultiChapterToc) {
 
   // TOC entries should have labels
   for (size_t i = 0; i < epub.toc().entries.size(); ++i) {
-    EXPECT_FALSE(epub.toc().label_of(epub.toc().entries[i]).empty()) << "TOC entry should have a label";
+    EXPECT_FALSE(epub.toc().entries[i].label.to_string().empty()) << "TOC entry should have a label";
   }
 }
 

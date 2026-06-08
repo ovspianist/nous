@@ -176,16 +176,13 @@ bool convert_epub_to_mrb_streaming(Book& book, const char* output_path, uint8_t*
     std::string fragment;   // the id value to locate
     size_t toc_entry_idx;   // index into toc_work.entries to fill in
   };
-  TableOfContents toc_work = book.take_toc();
-  // toc_work.blob_ holds all label+fragment data. shrink_to_fit in case of
-  // excess capacity from geometric growth during NCX parse.
-  toc_work.blob_.shrink_to_fit();
-  toc_work.entries.shrink_to_fit();
+  // Use a reference — moving the TOC would invalidate StringRef::pool pointers.
+  TableOfContents& toc_work = book.toc();
 
   std::vector<FragmentNeed> fragment_needs;
   fragment_needs.reserve(toc_work.entries.size());
   for (size_t i = 0; i < toc_work.entries.size(); ++i) {
-    auto frag = toc_work.fragment_of(toc_work.entries[i]);
+    auto frag = toc_work.entries[i].fragment.to_string();
     if (!frag.empty()) {
       fragment_needs.push_back({toc_work.entries[i].file_idx, std::string(frag), i});
     }

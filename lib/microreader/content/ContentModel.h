@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "StringPool.h"
+
 namespace microreader {
 
 // ---------------------------------------------------------------------------
@@ -170,17 +172,12 @@ struct SpineItem {
 // ---------------------------------------------------------------------------
 // Table of contents entry
 // ---------------------------------------------------------------------------
-// TocEntry stores label + fragment as offsets into TableOfContents::blob_ rather
-// than individual std::string objects. This reduces per-entry memory from ~28 bytes
-// (two std::strings + 2 heap allocations each) to 14 bytes (pure integer fields),
-// and collapses all string data into a single heap allocation. For a 1000-entry TOC
-// this saves ~40-50KB on ESP32 versus individual std::string members.
+// Use a small StringPool to pack many small strings into one contiguous blob.
+// This is reusable across other structures that need pooled strings.
 
 struct TocEntry {
-  uint16_t label_off = 0;  // byte offset into TableOfContents::blob_
-  uint16_t label_len = 0;  // byte length of label (max 65535)
-  uint16_t frag_off = 0;   // byte offset of fragment into TableOfContents::blob_
-  uint16_t frag_len = 0;   // byte length of fragment (0 = no fragment)
+  StringRef label{};
+  StringRef fragment{};  // empty => no fragment
   uint16_t file_idx = 0;
   uint8_t depth = 0;        // nesting depth in NCX (0 = top-level)
   uint16_t para_index = 0;  // paragraph index within chapter (stored in MRB v6+)
@@ -188,29 +185,18 @@ struct TocEntry {
 
 struct TableOfContents {
   std::vector<TocEntry> entries;
-  std::string blob_;  // all label + fragment data packed contiguously
+  StringPool pool;
 
-  // Accessors
-  std::string_view label_of(const TocEntry& e) const {
-    return {blob_.data() + e.label_off, e.label_len};
-  }
-  std::string_view fragment_of(const TocEntry& e) const {
-    if (e.frag_len == 0)
-      return {};
-    return {blob_.data() + e.frag_off, e.frag_len};
-  }
-
-  // Add an entry during parsing; appends label+fragment to the blob.
-  // blob_ may reallocate, but entries store integer offsets so they remain valid.
+  // Add an entry during parsing; uses the pool to store strings.
   void add_entry(std::string_view label, uint16_t file_idx, uint8_t depth, std::string_view fragment = {},
                  uint16_t para_index = 0) {
-    auto loff = static_cast<uint16_t>(blob_.size());
-    auto llen = static_cast<uint16_t>(std::min(label.size(), size_t(0xFFFF)));
-    blob_.append(label.data(), llen);
-    auto foff = static_cast<uint16_t>(blob_.size());
-    auto flen = static_cast<uint16_t>(std::min(fragment.size(), size_t(0xFFFF)));
-    blob_.append(fragment.data(), flen);
-    entries.push_back({loff, llen, foff, flen, file_idx, depth, para_index});
+    TocEntry te;
+    te.label = pool.add(label);
+    te.fragment = pool.add(fragment);
+    te.file_idx = file_idx;
+    te.depth = depth;
+    te.para_index = para_index;
+    entries.push_back(te);
   }
 };
 

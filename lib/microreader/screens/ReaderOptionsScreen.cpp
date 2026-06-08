@@ -32,7 +32,7 @@ void ReaderOptionsScreen::populate(const TableOfContents& toc, uint16_t current_
     }
   }
   if (best_match >= 0) {
-    chapter_title_ = std::string(toc.label_of(toc.entries[best_match]));
+    chapter_title_ = toc.entries[best_match].label.to_string();
   }
 
   book_progress_pct_ = book_progress_pct;

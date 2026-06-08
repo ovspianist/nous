@@ -294,9 +294,10 @@ TEST_F(MrbFormatTest, RoundTrip_Metadata) {
   EXPECT_EQ(reader.metadata().language.value_or(""), "de");
 
   ASSERT_EQ(reader.toc().entries.size(), 2u);
-  EXPECT_EQ(reader.toc().label_of(reader.toc().entries[0]), "Chapter One");
+
+  EXPECT_EQ(reader.toc().entries[0].label.to_string(), "Chapter One");
   EXPECT_EQ(reader.toc().entries[0].file_idx, 0);
-  EXPECT_EQ(reader.toc().label_of(reader.toc().entries[1]), "Chapter Two");
+  EXPECT_EQ(reader.toc().entries[1].label.to_string(), "Chapter Two");
   EXPECT_EQ(reader.toc().entries[1].file_idx, 5);
 }
 
