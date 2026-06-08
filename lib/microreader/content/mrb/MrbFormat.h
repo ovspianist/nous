@@ -31,7 +31,7 @@ namespace microreader {
 // ---------------------------------------------------------------------------
 
 static constexpr uint8_t kMrbMagic[4] = {'M', 'R', 'B', '1'};
-static constexpr uint16_t kMrbVersion = 10;  // v10: anchor table (id→para_index for link navigation)
+static constexpr uint16_t kMrbVersion = 11;  // v11: large paragraphs split at conversion time (≤4KB text each)
 
 // ---------------------------------------------------------------------------
 // Header (32 bytes, fixed)

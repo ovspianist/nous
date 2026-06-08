@@ -103,13 +103,13 @@ class MrbWriter {
   uint16_t chapter_para_count_ = 0;  // paragraph count in current chapter
   uint32_t chapter_char_count_ = 0;  // total text chars (bytes) in current chapter
 
-  // Descriptor table built during a chapter: (file_offset, char_offset) per paragraph.
-  // Written to disk at end_chapter(); allows O(1) paragraph lookup at read time.
-  struct ParaDesc {
-    uint32_t file_offset;
-    uint32_t char_offset;
-  };
-  std::vector<ParaDesc> para_descriptors_;
+  // Descriptor table: streamed to a single temp file for the whole book.
+  // Each 8-byte entry {file_offset(u32), char_offset(u32)} is appended as paragraphs
+  // are written. end_chapter() seeks back to chapter_desc_start_ and copies exactly
+  // chapter_para_count_*8 bytes into the MRB. Zero heap allocation, one FD, unbounded.
+  FILE* desc_tmp_ = nullptr;
+  char desc_tmp_path_[260] = {};
+  uint32_t chapter_desc_start_ = 0;  // byte offset in desc_tmp_ where current chapter begins
 
   // Anchor table: streamed directly to a temp file during conversion to avoid
   // large contiguous RAM allocation. Copied into the MRB at finish().

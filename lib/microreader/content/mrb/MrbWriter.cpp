@@ -85,6 +85,13 @@ bool MrbWriter::open(const char* path) {
   // anchor_tmp_ failure is non-fatal: add_anchor() will silently skip.
   anchor_count_ = 0;
 
+  // Open a single temp file for all paragraph descriptors across the whole book.
+  // Reused across chapters; chapter_desc_start_ tracks where each chapter begins.
+  std::snprintf(desc_tmp_path_, sizeof(desc_tmp_path_), "%s.desc", path);
+  desc_tmp_ = std::fopen(desc_tmp_path_, "w+b");
+  chapter_desc_start_ = 0;
+  // desc_tmp_ failure is non-fatal: end_chapter() will write an empty table.
+
   // Write placeholder header (will be fixed up in finish()).
   MrbHeader hdr{};
   std::memcpy(hdr.magic, kMrbMagic, 4);
@@ -105,11 +112,18 @@ void MrbWriter::close() {
       std::remove(anchor_tmp_path_);
     anchor_tmp_path_[0] = '\0';
   }
+  if (desc_tmp_) {
+    std::fclose(desc_tmp_);
+    desc_tmp_ = nullptr;
+    if (desc_tmp_path_[0])
+      std::remove(desc_tmp_path_);
+    desc_tmp_path_[0] = '\0';
+  }
   anchor_count_ = 0;
+  chapter_desc_start_ = 0;
   paragraph_count_ = 0;
   chapters_.clear();
   images_.clear();
-  para_descriptors_.clear();
   serialize_buf_.clear();
   in_chapter_ = false;
   chapter_para_count_ = 0;
@@ -119,7 +133,11 @@ void MrbWriter::close() {
 void MrbWriter::begin_chapter() {
   chapter_para_count_ = 0;
   chapter_char_count_ = 0;
-  para_descriptors_.clear();
+  // Record where this chapter's descriptors start in desc_tmp_.
+  if (desc_tmp_) {
+    std::fseek(desc_tmp_, 0, SEEK_END);
+    chapter_desc_start_ = static_cast<uint32_t>(std::ftell(desc_tmp_));
+  }
   in_chapter_ = true;
 }
 
@@ -127,13 +145,20 @@ void MrbWriter::end_chapter() {
   if (!in_chapter_)
     return;
 
-  // Write the descriptor table: N × { file_offset(u32), char_offset(u32) }.
+  // Write the descriptor table by reading back from desc_tmp_.
   uint32_t table_offset = bw_.tell();
-  for (const auto& d : para_descriptors_) {
-    uint8_t buf[8];
-    mrb_write_u32(buf, d.file_offset);
-    mrb_write_u32(buf + 4, d.char_offset);
-    write_bytes(buf, 8);
+  if (desc_tmp_ && chapter_para_count_ > 0) {
+    std::fseek(desc_tmp_, static_cast<long>(chapter_desc_start_), SEEK_SET);
+    uint32_t remaining = chapter_para_count_ * 8u;
+    uint8_t copy_buf[128];
+    while (remaining > 0) {
+      size_t want = remaining < sizeof(copy_buf) ? remaining : sizeof(copy_buf);
+      size_t n = std::fread(copy_buf, 1, want, desc_tmp_);
+      if (n == 0)
+        break;
+      write_bytes(copy_buf, n);
+      remaining -= static_cast<uint32_t>(n);
+    }
   }
 
   MrbChapterEntry entry{};
@@ -143,7 +168,6 @@ void MrbWriter::end_chapter() {
   entry.reserved1 = 0;
   entry.char_count = chapter_char_count_;
   chapters_.push_back(entry);
-  para_descriptors_.clear();
   in_chapter_ = false;
 }
 
@@ -151,8 +175,13 @@ bool MrbWriter::write_paragraph(const Paragraph& para) {
   if (!bw_.is_open())
     return false;
 
-  // Record descriptor: (current file position, chars accumulated so far).
-  para_descriptors_.push_back({bw_.tell(), chapter_char_count_});
+  // Record descriptor: append {file_offset, char_offset} to desc_tmp_.
+  if (desc_tmp_) {
+    uint8_t desc[8];
+    mrb_write_u32(desc, bw_.tell());
+    mrb_write_u32(desc + 4, chapter_char_count_);
+    std::fwrite(desc, 1, 8, desc_tmp_);
+  }
 
   // Count chars for text paragraphs.
   if (para.type == ParagraphType::Text) {
