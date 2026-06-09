@@ -73,6 +73,10 @@ class ReaderScreen final : public IScreen {
 
   void start(DrawBuffer& buf, IRuntime& runtime) override;
   void stop() override;
+  // pause(): keep mrb_ open while a child screen (options/chapter) is active.
+  void pause() override {}
+  // resume(): return from a child screen — handle any pending navigation, then re-render.
+  void resume(DrawBuffer& buf, IRuntime& runtime) override;
   void update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) override;
 
   // Layout constants â€” exposed so tests and tools can build matching PageOptions.

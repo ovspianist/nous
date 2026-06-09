@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
+#include <string_view>
 #include <vector>
 
 #include "../Input.h"
@@ -52,28 +54,39 @@ class ListMenuScreen : public IScreen {
   }
 
   void add_item(const std::string& label, int indent = 0) {
+    owned_strings_.push_back(label);
+    labels_.push_back(std::string_view(owned_strings_.back()));
+    separators_.push_back(false);
+    indents_.push_back(indent);
+  }
+  // Zero-copy overload: stores a view into the caller-owned string.
+  // The caller must ensure the referenced string outlives this screen.
+  void add_item_view(std::string_view label, int indent = 0) {
     labels_.push_back(label);
     separators_.push_back(false);
     indents_.push_back(indent);
   }
   // Insert a visual separator (thin horizontal line, non-selectable).
   void add_separator(const std::string& header = "") {
-    labels_.push_back(header);
+    owned_strings_.push_back(header);
+    labels_.push_back(std::string_view(owned_strings_.back()));
     separators_.push_back(true);
     indents_.push_back(0);
   }
   void set_item_label(int index, const std::string& label) {
     if (index >= 0 && index < static_cast<int>(labels_.size())) {
-      labels_[index] = label;
+      owned_strings_.push_back(label);
+      labels_[index] = std::string_view(owned_strings_.back());
     }
   }
   std::string get_item_label(int index) const {
     if (index >= 0 && index < static_cast<int>(labels_.size()))
-      return labels_[index];
+      return std::string(labels_[index]);
     return {};
   }
   void clear_items() {
     labels_.clear();
+    owned_strings_.clear();
     separators_.clear();
     indents_.clear();
     selected_ = 0;
@@ -119,7 +132,8 @@ class ListMenuScreen : public IScreen {
   void center_on_selected_();
 
  private:
-  std::vector<std::string> labels_;
+  std::vector<std::string_view> labels_;
+  std::deque<std::string> owned_strings_;  // backing storage for copied labels
   std::vector<bool> separators_;
   std::vector<int> indents_;
 

@@ -131,6 +131,10 @@ class ReaderOptionsScreen final : public ListMenuScreen {
   void set_page_links(const std::vector<PageLink>& links, const std::vector<std::string>& spine_files,
                       const MrbReader& mrb);
 
+  void stop() override {
+    toc_ = nullptr;
+  }
+
   void update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) override {
     buf_ = &buf;
     ListMenuScreen::update(buttons, buf, runtime);
@@ -173,8 +177,11 @@ class ReaderOptionsScreen final : public ListMenuScreen {
   std::string book_title1_buf_;
   std::string book_title2_buf_;
   std::string chapter_title_;
+
   int book_progress_pct_ = 0;
   int chapter_progress_pct_ = 0;
+
+  const TableOfContents* toc_ = nullptr;
 };
 
 }  // namespace microreader

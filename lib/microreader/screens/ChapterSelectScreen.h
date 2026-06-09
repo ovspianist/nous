@@ -28,10 +28,6 @@ class ChapterSelectScreen final : public ListMenuScreen {
   bool has_pending() const {
     return has_pending_;
   }
-  // Returns true if this screen was populated with a non-empty TOC.
-  bool has_toc() const {
-    return !entries_.empty();
-  }
   // The chapter index to jump to (valid only when has_pending() == true).
   uint16_t pending_chapter() const {
     return pending_chapter_;
@@ -49,13 +45,7 @@ class ChapterSelectScreen final : public ListMenuScreen {
   void on_select(int index) override;
 
  private:
-  struct Entry {
-    std::string label;
-    uint16_t chapter_idx;
-    uint16_t para_index;
-    uint8_t depth;
-  };
-  std::vector<Entry> entries_;
+  const TableOfContents* toc_ = nullptr;
   int initial_selected_ = 0;
 
   uint16_t pending_chapter_ = 0;

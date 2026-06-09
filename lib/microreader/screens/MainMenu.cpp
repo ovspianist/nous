@@ -126,7 +126,7 @@ void MainMenu::populate_list_() {
   // Rebuild the list-menu items after sort.
   clear_items();
   for (const auto& e : entries_)
-    add_item(e.label);
+    add_item_view(e.label);
 
   // Restore cursor to the saved path.
   if (!initial_selection_.empty()) {

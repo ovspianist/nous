@@ -276,10 +276,10 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
   for (int i = scroll_offset_; i < end; ++i) {
     // Separator row
     if (i < (int)separators_.size() && separators_[i]) {
-      const std::string& hdr = labels_[i];
+      const std::string_view hdr = labels_[i];
       if (!hdr.empty()) {
-        const int hw = ui_font_.word_width(hdr.c_str(), hdr.size(), FontStyle::Regular);
-        buf.draw_text_proportional((W - hw) / 2, y + baseline, hdr.c_str(), hdr.size(), ui_font_, false);
+        const int hw = ui_font_.word_width(hdr.data(), hdr.size(), FontStyle::Regular);
+        buf.draw_text_proportional((W - hw) / 2, y + baseline, hdr.data(), hdr.size(), ui_font_, false);
         y += line_h;
       } else {
         y += line_h / 2;
@@ -288,8 +288,8 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
     }
 
     // Regular item
-    const std::string& label_str = labels_[i];
-    const char* label = label_str.c_str();
+    const std::string_view label_str = labels_[i];
+    const char* label = label_str.data();
     size_t len = label_str.size();
     int iw = ui_font_.word_width(label, len, FontStyle::Regular);
 

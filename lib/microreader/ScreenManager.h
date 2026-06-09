@@ -14,30 +14,32 @@ class ScreenManager {
  public:
   static constexpr int kMaxDepth = 8;
 
-  // Push a new screen. Stops the current top, starts the new one.
+  // Push a new screen. Pauses the current top, starts the new one.
   // The new screen draws into buf; caller handles the actual refresh.
   void push(IScreen* screen, DrawBuffer& buf, IRuntime& runtime) {
     if (depth_ >= kMaxDepth)
       return;
     if (depth_ > 0)
-      stack_[depth_ - 1]->stop();
+      stack_[depth_ - 1]->pause();
     stack_[depth_++] = screen;
     screen->start(buf, runtime);
   }
 
-  // Pop the top screen(s). Stops the current top, then restarts the new one below.
+  // Pop the top screen(s). Stops all removed screens, then resumes the new top.
   void pop(int count, DrawBuffer& buf, IRuntime& runtime) {
     if (count <= 0 || depth_ == 0)
       return;
     if (count > depth_)
       count = depth_;
 
-    stack_[depth_ - 1]->stop();
+    // Stop all screens being removed from the stack.
+    for (int i = depth_ - 1; i >= depth_ - count; --i)
+      stack_[i]->stop();
     HEAP_LOG("pop: after stop");
     depth_ -= count;
     if (depth_ > 0) {
-      stack_[depth_ - 1]->start(buf, runtime);
-      HEAP_LOG("pop: after prev start");
+      stack_[depth_ - 1]->resume(buf, runtime);
+      HEAP_LOG("pop: after prev resume");
     }
   }
 

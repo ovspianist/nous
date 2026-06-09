@@ -217,6 +217,7 @@ class Application {
   ButtonState buttons_{};
   uint64_t ticks_ = 0;
   uint32_t uptime_ms_ = 0;
+
   bool started_ = false;
   bool running_ = true;
 
@@ -227,8 +228,9 @@ class Application {
   bool invert_bottom_paging_ = true;
   bool invert_side_buttons_ = false;
   bool rotate_display_ = false;
+
   int menu_font_size_ = 0;
-  uint32_t open_counter_ = 0;  // monotonically increasing; incremented each time a book is opened
+  uint16_t open_counter_ = 0;  // monotonically increasing; incremented each time a book is opened
 
   std::string custom_font_path_;
   std::string installed_font_path_;
@@ -253,9 +255,11 @@ class Application {
   ScreenId pending_replace_ = ScreenId::None;
 
   int pending_pop_count_ = 0;
+
   const BitmapFontSet* reader_font_ = nullptr;
   FontManager* font_manager_ = nullptr;
   std::function<void()> invalidate_font_fn_;
+
   IScreen* screen_for_(ScreenId id);
 };
 

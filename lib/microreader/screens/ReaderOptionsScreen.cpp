@@ -22,23 +22,24 @@ constexpr const char* ReaderSettings::kFontSizeNames[];
 
 void ReaderOptionsScreen::populate(const TableOfContents& toc, uint16_t current_chapter, uint16_t current_para,
                                    const std::string& fallback_title, int book_progress_pct, int chapter_progress_pct) {
+  toc_ = &toc;
   book_title_ = fallback_title;
   chapter_title_ = fallback_title;
   int best_match = -1;
-  for (size_t i = 0; i < toc.entries.size(); ++i) {
-    if (toc.entries[i].file_idx < current_chapter ||
-        (toc.entries[i].file_idx == current_chapter && toc.entries[i].para_index <= current_para)) {
+  for (size_t i = 0; i < toc_->entries.size(); ++i) {
+    if (toc_->entries[i].file_idx < current_chapter ||
+        (toc_->entries[i].file_idx == current_chapter && toc_->entries[i].para_index <= current_para)) {
       best_match = static_cast<int>(i);
     }
   }
   if (best_match >= 0) {
-    chapter_title_ = toc.entries[best_match].label.to_string(toc.pool);
+    chapter_title_ = toc_->entries[best_match].label.to_string(toc_->pool);
   }
 
   book_progress_pct_ = book_progress_pct;
   chapter_progress_pct_ = chapter_progress_pct;
-  if (!toc.entries.empty() && app_) {
-    app_->chapter_select()->populate(toc, current_chapter, current_para);
+  if (toc_ && !toc_->entries.empty() && app_) {
+    app_->chapter_select()->populate(*toc_, current_chapter, current_para);
     app_->chapter_select()->clear_pending();
   }
 }
@@ -196,8 +197,9 @@ void ReaderOptionsScreen::on_start() {
 
   char tmp[40];
 
+  bool has_toc = toc_ && !toc_->entries.empty();
   // "Chapters" goes at the top so it's easy to reach.
-  if (app_ && app_->chapter_select()->has_toc()) {
+  if (app_ && has_toc) {
     idx_chapters_ = count();
     add_item("Chapters");
   }
@@ -211,7 +213,7 @@ void ReaderOptionsScreen::on_start() {
   }
 
   // Separator between chapter navigation and text layout settings.
-  if (settings_ && app_ && app_->chapter_select()->has_toc())
+  if (settings_ && app_ && has_toc)
     add_separator();
 
   if (settings_) {

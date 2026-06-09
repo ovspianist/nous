@@ -359,31 +359,9 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   chapter_idx_ = 0;
   page_pos_ = PagePosition{0, 0};
   image_size_fn_ = make_image_size_query(mrb_, path_, static_cast<uint16_t>(buf.width()));
-  // Restore position: if the user selected a chapter from the TOC or links list, jump there;
-  // otherwise load saved bookmark from disk.
-  if (app_ && app_->chapter_select()->has_pending()) {
-    saved_chapter_idx_ = app_->chapter_select()->pending_chapter();
-    saved_page_pos_ = PagePosition{app_->chapter_select()->pending_para_index(), 0, 0};
-    app_->chapter_select()->clear_pending();
-  } else if (app_ && app_->links_screen()->has_pending()) {
-    // Push origin onto nav history BEFORE overwriting saved_ with the link destination.
-    // saved_chapter_idx_ / saved_page_pos_ are still valid here: stop() was NOT called
-    // (ScreenManager::pop only stops the top screen, not Reader), so they hold the
-    // values from when Button1 was pressed to open the options/links flow.
-    if (nav_history_.size() < kMaxNavHistory) {
-      MR_LOGI("nav", "push origin ch=%u para=%u", (unsigned)saved_chapter_idx_, (unsigned)saved_page_pos_.paragraph);
-      nav_history_.push_back({saved_chapter_idx_, saved_page_pos_});
-    }
-    saved_chapter_idx_ = app_->links_screen()->pending_chapter();
-    saved_page_pos_ = PagePosition{app_->links_screen()->pending_para(), 0, 0};
-    MR_LOGI("nav", "link jump -> ch=%u para=%u (history depth=%u)", (unsigned)saved_chapter_idx_,
-            (unsigned)saved_page_pos_.paragraph, (unsigned)nav_history_.size());
-    app_->links_screen()->clear_pending();
-  } else {
-    saved_chapter_idx_ = 0;
-    saved_page_pos_ = PagePosition{0, 0};
-    load_position_();
-  }
+  saved_chapter_idx_ = 0;
+  saved_page_pos_ = PagePosition{0, 0};
+  load_position_();
   load_chapter_(saved_chapter_idx_);
   if (!chapter_src_) {
     // Fallback to chapter 0 if saved index is invalid.
@@ -416,6 +394,42 @@ show_error:
   }
 }
 
+void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
+  buf_ = &buf;
+  if (!open_ok_)
+    return;
+
+  // Handle pending chapter jump (from ChapterSelectScreen).
+  if (app_ && app_->chapter_select()->has_pending()) {
+    saved_chapter_idx_ = app_->chapter_select()->pending_chapter();
+    saved_page_pos_ = PagePosition{app_->chapter_select()->pending_para_index(), 0, 0};
+    app_->chapter_select()->clear_pending();
+    load_chapter_(saved_chapter_idx_);
+    page_pos_ = saved_page_pos_;
+    layout_engine_.set_source(*chapter_src_);
+    layout_engine_.set_image_size_fn(image_size_fn_);
+    layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
+  } else if (app_ && app_->links_screen()->has_pending()) {
+    if (nav_history_.size() < kMaxNavHistory)
+      nav_history_.push_back({saved_chapter_idx_, saved_page_pos_});
+    saved_chapter_idx_ = app_->links_screen()->pending_chapter();
+    saved_page_pos_ = PagePosition{app_->links_screen()->pending_para(), 0, 0};
+    app_->links_screen()->clear_pending();
+    load_chapter_(saved_chapter_idx_);
+    page_pos_ = saved_page_pos_;
+    layout_engine_.set_source(*chapter_src_);
+    layout_engine_.set_image_size_fn(image_size_fn_);
+    layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
+  }
+  // Check if font settings changed (font_size_idx may have been updated in options).
+  if (const BitmapFontSet* fset = ext_font_set_ ? ext_font_set_ : (font_set_.valid() ? &font_set_ : nullptr)) {
+    const_cast<BitmapFontSet*>(fset)->set_base_size_index(reader_settings_.font_size_idx);
+  }
+
+  render_page_(buf);
+  save_position_();
+}
+
 void ReaderScreen::stop() {
   image_size_fn_ = {};
   chapter_src_.reset();
@@ -432,11 +446,8 @@ void ReaderScreen::stop() {
   book_key_.shrink_to_fit();
   nav_history_.clear();
   open_ok_ = false;
-  // NOTE: saved_chapter_idx_ / saved_page_pos_ are intentionally NOT reset here.
-  // They are set in update() before pushing the options screen, and start() uses
-  // them as the nav-history origin when a link jump is pending. stop() is called
-  // by ScreenManager::push(), which fires between update() and start(), so clearing
-  // here would destroy the origin before start() can capture it.
+  // saved_chapter_idx_ / saved_page_pos_ are intentionally NOT reset here —
+  // resume() uses them as the nav-history origin when a link jump is pending.
   buf_ = nullptr;
 }
 
