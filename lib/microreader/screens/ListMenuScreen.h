@@ -45,6 +45,7 @@ class ListMenuScreen : public IScreen {
  protected:
   const char* title_ = nullptr;
   const char* title2_ = nullptr;
+
   std::string subtitle_;
   std::string subtitle2_;
   std::string subtitle3_;

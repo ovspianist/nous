@@ -76,7 +76,7 @@ inline bool sd_init() {
   esp_vfs_fat_mount_config_t mnt{};
   mnt.format_if_mount_failed = false;
   mnt.max_files = SD_MAX_FILES;
-  mnt.allocation_unit_size = 16 * 1024;
+  mnt.allocation_unit_size = 8 * 1024;
 
   err = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &dev_cfg, &mnt, &sd_card_);
   if (err != ESP_OK) {
