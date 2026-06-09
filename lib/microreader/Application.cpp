@@ -21,12 +21,8 @@ namespace fs = std::filesystem;
 
 namespace microreader {
 
-const char* Application::build_info() const {
-  return "microreader";
-}
-
 void Application::start(DrawBuffer& buf, IRuntime& runtime) {
-  HEAP_LOG("Application: start 0");
+  HEAP_LOG("Application: start");
 
   ticks_ = 0;
   uptime_ms_ = 0;
@@ -34,15 +30,11 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
   started_ = true;
   running_ = true;
 
-  MR_LOGI("app", "%s", build_info());
-
 #ifdef ESP_PLATFORM
   std::srand(esp_random());
 #else
   std::srand(static_cast<unsigned>(std::time(nullptr)));
 #endif
-
-  HEAP_LOG("Application: start 1");
 
   if (reader_font_)
     reader_.set_fonts(reader_font_);
@@ -50,13 +42,14 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
   menu_.set_app(this);
   reader_.set_app(this);
   settings_.set_app(this);
-  bouncing_ball_.set_app(this);
-  grayscale_demo_.set_app(this);
   reader_options_.set_app(this);
   chapter_select_.set_app(this);
   links_screen_.set_app(this);
 
-  HEAP_LOG("Application: start 2");
+#ifdef MICROREADER_ENABLE_DEMOS
+  bouncing_ball_.set_app(this);
+  grayscale_demo_.set_app(this);
+#endif
 
   // Set up settings file path if data_dir_ is set
   if (data_dir_)
@@ -249,16 +242,20 @@ IScreen* microreader::Application::screen_for_(ScreenId id) {
       return &reader_;
     case ScreenId::Settings:
       return &settings_;
-    case ScreenId::BouncingBall:
-      return &bouncing_ball_;
-    case ScreenId::GrayscaleDemo:
-      return &grayscale_demo_;
     case ScreenId::ReaderOptions:
       return &reader_options_;
     case ScreenId::ChapterSelect:
       return &chapter_select_;
     case ScreenId::Links:
       return &links_screen_;
+
+#ifdef MICROREADER_ENABLE_DEMOS
+    case ScreenId::BouncingBall:
+      return &bouncing_ball_;
+    case ScreenId::GrayscaleDemo:
+      return &grayscale_demo_;
+#endif
+
     default:
       return nullptr;
   }

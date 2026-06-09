@@ -8,15 +8,15 @@
 #include "Runtime.h"
 #include "ScreenManager.h"
 #include "display/DrawBuffer.h"
-#include "screens/BouncingBallDemo.h"
 #include "screens/ChapterSelectScreen.h"
-#include "screens/GrayscaleDemo.h"
 #include "screens/IScreen.h"
 #include "screens/LinksScreen.h"
 #include "screens/MainMenu.h"
 #include "screens/ReaderOptionsScreen.h"
 #include "screens/ReaderScreen.h"
 #include "screens/SettingsScreen.h"
+#include "screens/demo/BouncingBallDemo.h"
+#include "screens/demo/GrayscaleDemo.h"
 
 namespace microreader {
 
@@ -26,18 +26,16 @@ enum class ScreenId : uint8_t {
   MainMenu,
   Reader,
   Settings,
-  BouncingBall,
-  GrayscaleDemo,
   ReaderOptions,
   ChapterSelect,
   Links,
+  BouncingBall,
+  GrayscaleDemo,
 };
 
 class Application {
  public:
   Application() = default;
-
-  const char* build_info() const;
 
   void set_books_dir(const char* dir) {
     menu_.set_books_dir(dir);
@@ -51,12 +49,14 @@ class Application {
 
   // Path to data directory for settings/state persistence
   const char* data_dir_ = nullptr;
+
   // Path to the single unified settings file (cached after set_data_dir)
   std::string settings_path_;
   // Book path to auto-open on next start() (set by load_settings_)
   std::string pending_book_path_;
   // Screen to auto-open on next start() (set by load_settings_)
   std::string pending_screen_;
+
   // Save all persistent state to the settings file
   void save_settings_();
   // Load all persistent state from the settings file
@@ -240,11 +240,14 @@ class Application {
   MainMenu menu_;
   ReaderScreen reader_;
   SettingsScreen settings_;
-  BouncingBallDemo bouncing_ball_;
-  GrayscaleDemo grayscale_demo_;
   ReaderOptionsScreen reader_options_;
   ChapterSelectScreen chapter_select_;
   LinksScreen links_screen_;
+
+#ifdef MICROREADER_ENABLE_DEMOS
+  BouncingBallDemo bouncing_ball_;
+  GrayscaleDemo grayscale_demo_;
+#endif
 
   ScreenId pending_push_ = ScreenId::None;
   ScreenId pending_replace_ = ScreenId::None;

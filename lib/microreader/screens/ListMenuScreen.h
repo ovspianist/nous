@@ -103,6 +103,7 @@ class ListMenuScreen : public IScreen {
   BitmapFont ui_font_;
   BitmapFont header_font_;
   static int font_size_idx_;  // 0=Normal, 1=Large, 2=XLarge
+
   void request_redraw() {
     force_redraw_ = true;
   }
@@ -121,14 +122,17 @@ class ListMenuScreen : public IScreen {
   std::vector<std::string> labels_;
   std::vector<bool> separators_;
   std::vector<int> indents_;
-  bool align_left_ = false;
+
   int selected_ = 0;
   int scroll_offset_ = 0;
-  bool on_start_set_selection_ = false;
   int initial_selection_ = -1;
   int hold_frames_up_ = 0;
   int hold_frames_down_ = 0;
+
+  bool align_left_ = false;
+  bool on_start_set_selection_ = false;
   bool force_redraw_ = false;
+
   DrawBuffer* buf_ = nullptr;
   IRuntime* runtime_ = nullptr;
 

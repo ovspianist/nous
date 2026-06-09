@@ -40,8 +40,11 @@ class SettingsScreen final : public ListMenuScreen {
   const char* data_dir_ = nullptr;
 
   // Item indices (assigned during on_start).
+#ifdef MICROREADER_ENABLE_DEMOS
   int idx_bouncing_ball_ = -1;
   int idx_grayscale_demo_ = -1;
+#endif
+
   int idx_clear_cache_ = -1;
   int idx_rebuild_index_ = -1;
   int idx_list_format_ = -1;

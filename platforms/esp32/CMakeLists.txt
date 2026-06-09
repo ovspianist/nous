@@ -7,8 +7,8 @@ set(LIB ${CMAKE_CURRENT_LIST_DIR}/../../lib/microreader)
 set(lib_sources
     ${LIB}/Application.cpp
     ${LIB}/Loop.cpp
-    ${LIB}/screens/BouncingBallDemo.cpp
-    ${LIB}/screens/GrayscaleDemo.cpp
+    ${LIB}/screens/demo/BouncingBallDemo.cpp
+    ${LIB}/screens/demo/GrayscaleDemo.cpp
     ${LIB}/screens/ListMenuScreen.cpp
     ${LIB}/screens/MainMenu.cpp
     ${LIB}/screens/ReaderScreen.cpp

@@ -2,9 +2,9 @@
 
 #include <cstdlib>
 
-#include "../Input.h"
-#include "../display/DrawBuffer.h"
-#include "IScreen.h"
+#include "../../Input.h"
+#include "../../display/DrawBuffer.h"
+#include "../IScreen.h"
 
 namespace microreader {
 
@@ -33,7 +33,16 @@ class BouncingBallDemo final : public IScreen {
   };
   static constexpr int kNumRects = 10;
   static constexpr int kRectSizes[kNumRects][2] = {
-      {80,80},{60,60},{100,100},{50,50},{70,40},{90,90},{40,70},{55,55},{120,45},{45,120},
+      {80,  80 },
+      {60,  60 },
+      {100, 100},
+      {50,  50 },
+      {70,  40 },
+      {90,  90 },
+      {40,  70 },
+      {55,  55 },
+      {120, 45 },
+      {45,  120},
   };
   RandRect rand_rects_[kNumRects] = {};
 
@@ -49,8 +58,7 @@ class BouncingBallDemo final : public IScreen {
     const char* text;
   };
   static constexpr int kNumTexts = 5;
-  static constexpr const char* kTextLabels[kNumTexts] = {
-      "Hello", "World", "ePaper", "micro", "reader"};
+  static constexpr const char* kTextLabels[kNumTexts] = {"Hello", "World", "ePaper", "micro", "reader"};
   RandText rand_texts_[kNumTexts] = {};
 
   void draw_all_(DrawBuffer& buf) const;

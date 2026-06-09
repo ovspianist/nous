@@ -2,8 +2,8 @@
 
 #include <cstring>
 
-#include "../../../resources/test_image_grayscale.h"
-#include "../Application.h"
+#include "../../../../resources/test_image_grayscale.h"
+#include "../../Application.h"
 
 namespace microreader {
 

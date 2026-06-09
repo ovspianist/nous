@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../Input.h"
-#include "../display/DrawBuffer.h"
-#include "IScreen.h"
+#include "../../Input.h"
+#include "../../display/DrawBuffer.h"
+#include "../IScreen.h"
 
 namespace microreader {
 
