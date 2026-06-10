@@ -426,6 +426,10 @@ void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
     const_cast<BitmapFontSet*>(fset)->set_base_size_index(reader_settings_.font_size_idx);
   }
 
+  // Make sure to apply settings when coming from the reader options screen
+  if (chapter_src_)
+    layout_engine_.set_source(*chapter_src_);
+
   render_page_(buf);
   save_position_();
 }

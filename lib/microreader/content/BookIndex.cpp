@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "../HeapLog.h"
 #include "../display/DrawBuffer.h"
 #include "Book.h"
 
@@ -90,8 +91,7 @@ bool BookIndex::save(const std::string& index_file) const {
     auto title_v = entry.title.view(pool_);
     auto author_v = entry.author.view(pool_);
     std::fprintf(f, "%.*s|%.*s|%.*s|%u\n", static_cast<int>(path_v.size()), path_v.data(),
-                 static_cast<int>(title_v.size()), title_v.data(),
-                 static_cast<int>(author_v.size()), author_v.data(),
+                 static_cast<int>(title_v.size()), title_v.data(), static_cast<int>(author_v.size()), author_v.data(),
                  static_cast<unsigned>(entry.last_open_order));
   }
   std::fclose(f);
@@ -122,6 +122,7 @@ void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
 
   // Helper to process a single epub path (keeps peak memory low)
   auto process_path = [&](const std::string& path) {
+    MR_LOGI("index", "Indexing: %s", path.c_str());
     buf.show_loading("Indexing...", total > 0 ? 10 + (done * 90 / total) : 10);
     book.close();
     if (book.open(path.c_str(), buf.scratch_buf1(), buf.scratch_buf2(), false) == EpubError::Ok) {

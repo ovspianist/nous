@@ -226,7 +226,7 @@ void Application::update(const ButtonState& buttons, uint32_t dt_ms, DrawBuffer&
     } else if (pending_pop_count_ > 0) {
       int count = pending_pop_count_;
       pending_pop_count_ = 0;
-      if (top == &reader_)
+      if (top == &reader_ || top == &reader_options_)
         save_settings_();
       screen_mgr_.pop(count, buf, runtime);
       buf.refresh();
