@@ -98,6 +98,11 @@ bool BookIndex::save(const std::string& index_file) const {
   return true;
 }
 
+void BookIndex::clear_entries() {
+  { std::vector<BookIndexEntry> tmp; entries_.swap(tmp); }
+  pool_.reset();
+}
+
 void BookIndex::set_last_opened(std::string_view path, uint32_t order) {
   for (auto& entry : entries_) {
     if (entry.path.view(pool_) == path) {

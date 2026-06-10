@@ -44,10 +44,7 @@ class BookIndex {
   // entry only; call save() afterwards to persist.
   void set_last_opened(std::string_view path, uint32_t order);
 
-  void clear_entries() {
-    entries_.clear();
-    pool_ = StringPool{};
-  }
+  void clear_entries();
 
  private:
   std::vector<BookIndexEntry> entries_;

@@ -93,6 +93,15 @@ class ListMenuScreen : public IScreen {
     selected_ = 0;
     scroll_offset_ = 0;
   }
+  // Free all item storage without touching selected_/scroll_offset_.
+  // Call from stop() to release RAM while preserving the cursor position
+  // for the fallback path in ListMenuScreen::start().
+  void free_items_storage() {
+    { std::vector<std::string_view> tmp; labels_.swap(tmp); }
+    { std::deque<std::string> tmp; owned_strings_.swap(tmp); }
+    { std::vector<bool> tmp; separators_.swap(tmp); }
+    { std::vector<int> tmp; indents_.swap(tmp); }
+  }
   int selected() const {
     return selected_;
   }

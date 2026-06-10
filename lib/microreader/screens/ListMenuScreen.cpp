@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "../HeapLog.h"
+
 #include "../Application.h"
 #include "../display/ui_font_header.h"
 #include "../display/ui_font_large.h"

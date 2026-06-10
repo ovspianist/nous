@@ -77,13 +77,7 @@ class MainMenu final : public ListMenuScreen {
     ListMenuScreen::start(buf, runtime);
   }
 
-  void stop() override {
-    // Snapshot the highlighted path before the list is torn down,
-    // so we can restore the cursor on the next start().
-    const std::string& cur = current_book_path();
-    if (!cur.empty())
-      initial_selection_ = cur;
-  }
+  void stop() override;
 
   void update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) override;
 

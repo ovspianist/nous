@@ -5,7 +5,6 @@
 #include <cstring>
 
 #include "../Application.h"
-#include "../HeapLog.h"
 #include "../content/BookIndex.h"
 
 #ifdef ESP_PLATFORM
@@ -55,6 +54,18 @@ void MainMenu::on_select(int index) {
   app_->record_book_opened(entries_[index].path);
   app_->reader()->set_path(entries_[index].path.c_str());
   app_->push_screen(ScreenId::Reader);
+}
+
+void MainMenu::stop() {
+  const std::string& cur = current_book_path();
+  if (!cur.empty()) {
+    initial_selection_ = cur;
+    last_selected_path_ = cur;  // survives entries_ being freed; used by save_settings_()
+  }
+
+  { std::vector<BookEntry> tmp; entries_.swap(tmp); }
+  free_items_storage();
+  BookIndex::instance().clear_entries();
 }
 
 void MainMenu::on_back() {
@@ -123,6 +134,7 @@ void MainMenu::populate_list_() {
     std::stable_sort(entries_.begin(), entries_.end(),
                      [](const BookEntry& a, const BookEntry& b) { return a.label < b.label; });
   }
+
   // Rebuild the list-menu items after sort.
   clear_items();
   for (const auto& e : entries_)

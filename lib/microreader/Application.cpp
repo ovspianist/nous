@@ -22,8 +22,6 @@ namespace fs = std::filesystem;
 namespace microreader {
 
 void Application::start(DrawBuffer& buf, IRuntime& runtime) {
-  HEAP_LOG("Application: start");
-
   ticks_ = 0;
   uptime_ms_ = 0;
   buttons_ = ButtonState{};

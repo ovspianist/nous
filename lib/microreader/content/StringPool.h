@@ -38,6 +38,12 @@ class StringPool {
     blob_.reserve(n);
   }
 
+  // Force-release the backing allocation (swap idiom works where shrink_to_fit/= don't).
+  void reset() {
+    std::string tmp;
+    blob_.swap(tmp);
+  }
+
  private:
   std::string blob_;
 };
