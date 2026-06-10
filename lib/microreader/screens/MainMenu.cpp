@@ -16,6 +16,22 @@ namespace fs = std::filesystem;
 
 namespace microreader {
 
+// Returns a view into `path` pointing at the bare filename without extension.
+static std::string_view filename_sv(const std::string& path) {
+  const char* name = path.c_str();
+  const char* sep = std::strrchr(name, '/');
+#ifdef _WIN32
+  const char* bsep = std::strrchr(name, '\\');
+  if (bsep && (!sep || bsep > sep))
+    sep = bsep;
+#endif
+  if (sep)
+    name = sep + 1;
+  const char* dot = std::strrchr(name, '.');
+  size_t len = dot ? static_cast<size_t>(dot - name) : std::strlen(name);
+  return {name, len};
+}
+
 void MainMenu::on_start() {
   title_ = "Microreader";
 
@@ -30,7 +46,6 @@ void MainMenu::on_start() {
     populate_list_();
     needs_scan_ = false;
   } else {
-    // We defer heavy scanning to update() so we don't trip hardware watchdog.
     needs_scan_ = true;
   }
 }
@@ -41,7 +56,6 @@ void MainMenu::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& run
     scan_directory_(buf);
     populate_list_();
 
-    // Force a redraw and full refresh since the list contents completely changed
     draw_all_(buf, runtime.battery_percentage());
     buf.full_refresh();
   }
@@ -60,7 +74,7 @@ void MainMenu::stop() {
   const std::string& cur = current_book_path();
   if (!cur.empty()) {
     initial_selection_ = cur;
-    last_selected_path_ = cur;  // survives entries_ being freed; used by save_settings_()
+    last_selected_path_ = cur;
   }
 
   { std::vector<BookEntry> tmp; entries_.swap(tmp); }
@@ -84,8 +98,28 @@ void MainMenu::scan_directory_(DrawBuffer& buf) {
   BookIndex::instance().build_index(root_dir, buf);
   BookIndex::instance().save(index_path);
 
-  // Refresh to clean up the loading bar
   buf.reset_after_scratch(true);
+}
+
+int MainMenu::count() const {
+  return static_cast<int>(entries_.size());
+}
+
+std::string_view MainMenu::get_item_label(int index) const {
+  if (index < 0 || index >= static_cast<int>(entries_.size()))
+    return {};
+  const StringPool& pool = BookIndex::instance().pool();
+  const BookEntry& e = entries_[index];
+  if (list_format_ == BookListFormat::TitleOnly) {
+    return e.title_ref.view(pool);
+  } else if (list_format_ == BookListFormat::Filename) {
+    return filename_sv(e.path);
+  } else {
+    label_buf_ = std::string(e.title_ref.view(pool));
+    label_buf_ += " - ";
+    label_buf_ += e.author_ref.view(pool);
+    return std::string_view(label_buf_);
+  }
 }
 
 void MainMenu::populate_list_() {
@@ -93,52 +127,27 @@ void MainMenu::populate_list_() {
   entries_.clear();
 
   const StringPool& bpool = BookIndex::instance().pool();
-  for (const auto& index_entry : BookIndex::instance().entries()) {
+  for (const auto& idx : BookIndex::instance().entries()) {
     BookEntry e;
-    e.path = index_entry.path.to_string(bpool);
-
-    if (list_format_ == BookListFormat::TitleOnly) {
-      e.label = index_entry.title.to_string(bpool);
-    } else if (list_format_ == BookListFormat::Filename) {
-      const char* name = e.path.c_str();
-      const char* sep = std::strrchr(name, '/');
-#ifdef _WIN32
-      const char* bsep = std::strrchr(name, '\\');
-      if (bsep && (!sep || bsep > sep))
-        sep = bsep;
-#endif
-      if (sep)
-        name = sep + 1;
-
-      const char* dot = std::strrchr(name, '.');
-      if (dot) {
-        e.label = std::string(name, dot - name);
-      } else {
-        e.label = name;
-      }
-    } else {
-      e.label = index_entry.title.to_string(bpool) + " - " + index_entry.author.to_string(bpool);  // Title & Author
-    }
-
+    e.path = idx.path.to_string(bpool);
+    e.title_ref = idx.title;
+    e.author_ref = idx.author;
+    e.last_open_order = idx.last_open_order;
     entries_.push_back(std::move(e));
-    entries_.back().last_open_order = index_entry.last_open_order;
   }
 
-  // Sort the list according to sort_order_.
-  // We need to re-sync items_ in ListMenuScreen after sorting, so we rebuild
-  // it from scratch after the sort rather than calling add_item() before sort.
   if (sort_order_ == BookSortOrder::ByLastOpened) {
     std::stable_sort(entries_.begin(), entries_.end(),
                      [](const BookEntry& a, const BookEntry& b) { return a.last_open_order > b.last_open_order; });
+  } else if (list_format_ == BookListFormat::Filename) {
+    std::stable_sort(entries_.begin(), entries_.end(),
+                     [](const BookEntry& a, const BookEntry& b) { return filename_sv(a.path) < filename_sv(b.path); });
   } else {
     std::stable_sort(entries_.begin(), entries_.end(),
-                     [](const BookEntry& a, const BookEntry& b) { return a.label < b.label; });
+                     [&bpool](const BookEntry& a, const BookEntry& b) {
+                       return a.title_ref.view(bpool) < b.title_ref.view(bpool);
+                     });
   }
-
-  // Rebuild the list-menu items after sort.
-  clear_items();
-  for (const auto& e : entries_)
-    add_item_view(e.label);
 
   // Restore cursor to the saved path.
   if (!initial_selection_.empty()) {

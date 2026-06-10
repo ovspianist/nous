@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string_view>
 
 #include "../Input.h"
+#include "../content/StringPool.h"
 #include "../display/DrawBuffer.h"
 #include "ListMenuScreen.h"
 
@@ -72,6 +74,9 @@ class MainMenu final : public ListMenuScreen {
     app_ = app;
   }
 
+  int count() const override;
+  std::string_view get_item_label(int index) const override;
+
   void start(DrawBuffer& buf, IRuntime& runtime) override {
     buf_ = &buf;
     ListMenuScreen::start(buf, runtime);
@@ -97,10 +102,12 @@ class MainMenu final : public ListMenuScreen {
 
   struct BookEntry {
     std::string path;
-    std::string label;
+    StringRef title_ref;
+    StringRef author_ref;
     uint32_t last_open_order = 0;
   };
   std::vector<BookEntry> entries_;
+  mutable std::string label_buf_;  // scratch for TitleAndAuthor format
 
   void scan_directory_(DrawBuffer& buf);
   void populate_list_();

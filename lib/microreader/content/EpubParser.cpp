@@ -14,8 +14,6 @@
 #include "esp_timer.h"
 #endif
 
-#include "../HeapLog.h"
-
 namespace microreader {
 
 // ---------------------------------------------------------------------------
@@ -347,8 +345,6 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
 
   static constexpr size_t kWorkBufSize = ZipEntryInput::kDecompSize + ZipEntryInput::kDictSize + 1024;
   static constexpr size_t kXmlBufSize = 4096;
-  HEAP_LOG("parse_opf: enter");
-
   // --- Phase 1: Stream-parse OPF metadata ---
   ZipEntryInput zip_input;
   if (zip_input.open(file, *entry, work_buf, kWorkBufSize) != ZipError::Ok)
@@ -486,6 +482,9 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
     }
   }
 
+  MR_LOGI("opf", "root='%s' manifest=%u spine=%u css=%u", root_dir_.c_str(),
+          (unsigned)manifest.size(), (unsigned)spine_.size(), (unsigned)css_idxs.size());
+
   // Manifest is no longer needed — free its heap allocation.
   manifest.clear();
   manifest.shrink_to_fit();
@@ -494,29 +493,20 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
     return EpubError::Ok;
   }
 
-  HEAP_LOG("parse_opf: after OPF parse, before CSS");
-
   // --- Phase 2: Extract CSS ---
   // Reuse work_buf for CSS extraction (already done with OPF streaming).
   {
     std::vector<uint8_t> css_data;
     for (size_t ci = 0; ci < css_idxs.size(); ++ci) {
       auto& css_entry = zip_.entry(css_idxs[ci]);
-      MR_LOGI("parse_opf", "extracting CSS %u/%u: uncompressed=%lu", (unsigned)(ci + 1), (unsigned)css_idxs.size(),
-              (unsigned long)css_entry.uncompressed_size);
-
       css_data.clear();
-      if (zip_.extract(file, css_entry, css_data, work_buf, kWorkBufSize) == ZipError::Ok) {
-        MR_LOGI("parse_opf", "parsing CSS: %lu bytes", (unsigned long)css_data.size());
+      if (zip_.extract(file, css_entry, css_data, work_buf, kWorkBufSize) == ZipError::Ok)
         stylesheet_.extend_from_mut_sheet(reinterpret_cast<char*>(css_data.data()), css_data.size());
-      }
-      HEAP_LOG("parse_opf: after CSS extract+parse");
     }
   }
 
   // --- Phase 3: Parse NCX (reuses same work buffer and xml buffer) ---
   if (ncx_file_idx >= 0) {
-    HEAP_LOG("parse_opf: before NCX");
     auto& ncx_entry = zip_.entry(ncx_file_idx);
     // NCX src paths are relative to the NCX file's directory, not the OPF root.
     // Compute the NCX's own base dir (e.g. "OEBPS/ncx/" for "OEBPS/ncx/toc.ncx").
@@ -525,7 +515,6 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
     if (slash != std::string_view::npos)
       ncx_dir = std::string(ncx_entry.name.data(), slash + 1);
     parse_ncx(file, zip_, ncx_entry, ncx_dir, toc_, work_buf, kWorkBufSize, xml_buf, kXmlBufSize);
-    HEAP_LOG("parse_opf: after NCX parse");
   }
 
   return EpubError::Ok;
@@ -554,14 +543,12 @@ EpubError Epub::open(IZipFile& file, uint8_t* work_buf, uint8_t* xml_buf, bool p
   static constexpr size_t kWorkBufSize = ZipEntryInput::kDecompSize + ZipEntryInput::kDictSize + 2048;
   if (zip_.open(file) != ZipError::Ok)
     return EpubError::ZipError;
-  HEAP_LOG("epub.open: after zip_.open");
 
   std::string rootfile_path;
   auto err = parse_container(file, rootfile_path, work_buf,
                              ZipEntryInput::kDecompSize + ZipEntryInput::kDictSize + 2048, xml_buf, 4096);
   if (err != EpubError::Ok)
     return err;
-  HEAP_LOG("epub.open: after parse_container");
 
   // Determine root directory
   auto slash = rootfile_path.rfind('/');

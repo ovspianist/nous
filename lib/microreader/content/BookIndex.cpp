@@ -42,7 +42,7 @@ bool BookIndex::load(const std::string& index_file) {
     return false;
 
   entries_.clear();
-  pool_ = StringPool{};
+  pool_.reset();
 
   char line[1024];
   while (std::fgets(line, sizeof(line), f)) {
@@ -114,7 +114,7 @@ void BookIndex::set_last_opened(std::string_view path, uint32_t order) {
 
 void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
   entries_.clear();
-  pool_ = StringPool{};
+  pool_.reset();
   buf.show_loading("Scanning...", 0);
   // Process epub files as we find them to avoid storing all paths in memory.
   int done = 0;
@@ -127,7 +127,6 @@ void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
 
   // Helper to process a single epub path (keeps peak memory low)
   auto process_path = [&](const std::string& path) {
-    MR_LOGI("index", "Indexing: %s", path.c_str());
     buf.show_loading("Indexing...", total > 0 ? 10 + (done * 90 / total) : 10);
     book.close();
     if (book.open(path.c_str(), buf.scratch_buf1(), buf.scratch_buf2(), false) == EpubError::Ok) {
@@ -193,12 +192,12 @@ void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
 
   // Count then process using the iterator
   iterate_epubs([&](const std::string& p) { total++; });
+  MR_LOGI("index", "Found %d epub(s), indexing...", total);
   iterate_epubs(process_path);
+  MR_LOGI("index", "Indexed %d book(s)", done);
 
-  // Refresh loading to 100% just before exit
-  if (done > 0) {
+  if (done > 0)
     buf.show_loading("Indexing...", 100);
-  }
 }
 
 }  // namespace microreader

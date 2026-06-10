@@ -317,6 +317,7 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
     ESP_LOGI("perf", "Book::open: %ldms", open_ms);
 #endif
     if (err != EpubError::Ok || book_.chapter_count() == 0) {
+      MR_LOGI("reader", "epub open failed: err=%d chapters=%u", (int)err, (unsigned)book_.chapter_count());
       open_ok_ = false;
       goto show_error;
     }
@@ -329,6 +330,7 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
                                          int pct = total > 0 ? (done * 100 / total) : 0;
                                          buf.show_loading("Converting...", pct);
                                        })) {
+      MR_LOGI("reader", "mrb conversion failed");
       open_ok_ = false;
       goto show_error;
     }
@@ -345,6 +347,7 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
 
     mrb_ok = mrb_.open(mrb_path_.c_str());
     if (!mrb_ok) {
+      MR_LOGI("reader", "mrb open failed after conversion");
       open_ok_ = false;
       goto show_error;
     }
@@ -380,13 +383,13 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
   render_page_(buf);
 #ifdef ESP_PLATFORM
-  ESP_LOGI("reader", "BOOK_OK: %s", path_);
+  ESP_LOGI("reader", "BOOK_OK: %s", path_.c_str());
 #endif
   return;
 
 show_error:
 #ifdef ESP_PLATFORM
-  ESP_LOGE("reader", "BOOK_FAIL: %s", path_);
+  ESP_LOGE("reader", "BOOK_FAIL: %s", path_.c_str());
 #endif
   if (buf_was_touched_) {
     buf.fill(true);

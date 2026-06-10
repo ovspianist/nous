@@ -152,14 +152,6 @@ ZipError ZipReader::open(IZipFile& file) {
   const int64_t cd_start = eocd.central_dir_offset;
   file.seek(cd_start, SEEK_SET);
 
-#ifdef ESP_PLATFORM
-  {
-    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    ESP_LOGI(kZipTag, "open: entries=%u cd_size=%u free_largest=%u", (unsigned)eocd.total_entries, (unsigned)cd_size,
-             (unsigned)largest);
-  }
-#endif
-
   if (!heap_can_alloc(cd_size))
     return ZipError::OutOfMemory;
   std::vector<uint8_t> cd_buf(cd_size);
@@ -183,9 +175,6 @@ ZipError ZipReader::open(IZipFile& file) {
     }
   }
 
-#ifdef ESP_PLATFORM
-  ESP_LOGI(kZipTag, "open: name_blob=%u", (unsigned)total_name_bytes);
-#endif
   if (!heap_can_alloc(total_name_bytes))
     return ZipError::OutOfMemory;
   name_blob_.resize(total_name_bytes);

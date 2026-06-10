@@ -3,12 +3,17 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace microreader {
 
 // Compact pooled string storage for many small strings.
-// Stores bytes in a single contiguous blob; returns StringRef offsets.
-// This header is intentionally header-only and minimal to allow use in hot paths.
+// Stores data in fixed-size chunks so large contiguous heap blocks are never
+// required — important on ESP32 where the heap can be heavily fragmented after
+// EPUB rendering.  StringRef offsets are global across all chunks; get() walks
+// the chunk list to find the right one (O(n_chunks), typically < 15 iterations).
+//
+// Invariant: no single string ever spans two chunks.
 
 struct StringRef {
   uint32_t off = 0;
@@ -22,36 +27,51 @@ class StringPool {
  public:
   StringRef add(std::string_view s) {
     StringRef r;
-    r.off = static_cast<uint32_t>(blob_.size());
     r.len = static_cast<uint16_t>(s.size());
-    blob_.append(s.data(), s.size());
+    r.off = static_cast<uint32_t>(total_size_);
+    if (!s.empty()) {
+      // Start a new chunk if this string would not fit in the current one.
+      if (chunks_.empty() || chunks_.back().size() + s.size() > kChunkSize) {
+        chunks_.emplace_back();
+        chunks_.back().reserve(s.size() > kChunkSize ? s.size() : kChunkSize);
+      }
+      chunks_.back().append(s.data(), s.size());
+      total_size_ += s.size();
+    }
     return r;
   }
 
   std::string_view get(const StringRef& ref) const {
-    if (ref.len == 0)
-      return {};
-    return {blob_.data() + ref.off, ref.len};
+    if (ref.len == 0) return {};
+    size_t offset = ref.off;
+    for (const auto& chunk : chunks_) {
+      if (offset < chunk.size())
+        return {chunk.data() + offset, ref.len};
+      offset -= chunk.size();
+    }
+    return {};
   }
 
   void reserve(size_t n) {
-    blob_.reserve(n);
+    // Pre-reserve the chunk vector capacity; the first chunk is created lazily.
+    chunks_.reserve((n + kChunkSize - 1) / kChunkSize + 1);
   }
 
-  // Force-release the backing allocation (swap idiom works where shrink_to_fit/= don't).
+  // Force-release all backing allocations.
   void reset() {
-    std::string tmp;
-    blob_.swap(tmp);
+    std::vector<std::string> tmp;
+    chunks_.swap(tmp);
+    total_size_ = 0;
   }
 
  private:
-  std::string blob_;
+  static constexpr size_t kChunkSize = 8192;
+  std::vector<std::string> chunks_;
+  size_t total_size_ = 0;
 };
 
-// Define StringRef helpers after StringPool is complete so we can call pool.get().
 inline std::string_view StringRef::view(const StringPool& pool) const {
-  if (len == 0)
-    return {};
+  if (len == 0) return {};
   return pool.get(*this);
 }
 

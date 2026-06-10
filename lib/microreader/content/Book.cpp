@@ -8,7 +8,6 @@ EpubError Book::open(const char* path, uint8_t* work_buf, uint8_t* xml_buf, bool
   close();  // release previous resources
   if (!file_.open(path))
     return EpubError::ZipError;
-  HEAP_LOG("book.open: file opened");
   file_open_ = true;
 
   // If caller didn't provide buffers (desktop / tests), allocate here.
@@ -28,9 +27,7 @@ EpubError Book::open(const char* path, uint8_t* work_buf, uint8_t* xml_buf, bool
     xml_buf = owned_xml.get();
   }
 
-  auto err = epub_.open(file_, work_buf, xml_buf, parse_css_ncx);
-  HEAP_LOG("book.open: done");
-  return err;
+  return epub_.open(file_, work_buf, xml_buf, parse_css_ncx);
 }
 
 bool Book::open_zip_only(const char* path) {

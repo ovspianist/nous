@@ -80,11 +80,6 @@ class ListMenuScreen : public IScreen {
       labels_[index] = std::string_view(owned_strings_.back());
     }
   }
-  std::string get_item_label(int index) const {
-    if (index >= 0 && index < static_cast<int>(labels_.size()))
-      return std::string(labels_[index]);
-    return {};
-  }
   void clear_items() {
     labels_.clear();
     owned_strings_.clear();
@@ -109,8 +104,16 @@ class ListMenuScreen : public IScreen {
     selected_ = index;
     on_start_set_selection_ = true;
   }
-  int count() const {
+  virtual int count() const {
     return static_cast<int>(labels_.size());
+  }
+
+  // Label for item at index. Default reads from labels_[]; override to provide
+  // labels dynamically without populating the labels_ vector.
+  virtual std::string_view get_item_label(int index) const {
+    if (index >= 0 && index < static_cast<int>(labels_.size()))
+      return labels_[index];
+    return {};
   }
 
   // Called during start(). Set title_ and call add_item() to populate the list.
