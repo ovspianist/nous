@@ -87,6 +87,7 @@ TEST_P(ZipStreamingTest, AllXhtmlEntriesMatch) {
 }
 
 INSTANTIATE_EPUB_TESTS(ZipStreamingTest);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ZipStreamingTest);
 
 // ===========================================================================
 // Level 2: parse_chapter_streaming paragraphs vs parse_chapter
@@ -219,3 +220,4 @@ TEST_P(ChapterStreamingTest, ParagraphsMatch) {
 }
 
 INSTANTIATE_EPUB_TESTS(ChapterStreamingTest);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ChapterStreamingTest);

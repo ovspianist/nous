@@ -219,7 +219,7 @@ TEST_F(RealBookTest, Bobiverse_TOC) {
   // Typically has TOC entries
   printf("  TOC entries: %zu\n", toc.entries.size());
   for (size_t i = 0; i < std::min(toc.entries.size(), size_t(5)); ++i) {
-    printf("    [%zu] %s\n", i, toc.entries[i].label.to_string().c_str());
+    printf("    [%zu] %s\n", i, std::string(toc.label_view(i)).c_str());
   }
 }
 
@@ -662,7 +662,7 @@ TEST_F(RealBookTest, Tress1_TOC) {
   for (size_t i = 0; i < toc.entries.size(); ++i) {
     const auto& e = toc.entries[i];
     printf("    [%zu] depth=%u file_idx=%u label='%s'\n", i, (unsigned)e.depth, (unsigned)e.file_idx,
-           e.label.to_string().c_str());
+           std::string(toc.label_view(e)).c_str());
   }
 }
 
@@ -778,6 +778,23 @@ TEST_F(RealBookTest, AliceIllustrated_MrbImageDecode_SinkPath) {
   // Clean up test MRB
   std::remove(mrb_path.c_str());
   mrb.close();
+}
+
+// ===========================================================================
+// pg120-images — Gutenberg EPUB with many images, reported chapter_count=0
+// ===========================================================================
+
+TEST_F(RealBookTest, Pg120Images_Open) {
+  OPEN_BOOK_OR_SKIP("microreader/sd/books/pg120-images.epub");
+  EXPECT_FALSE(book_.metadata().title.empty());
+  printf("  Title: %s\n", book_.metadata().title.c_str());
+  printf("  Chapters: %zu\n", book_.chapter_count());
+  EXPECT_GT(book_.chapter_count(), 0u) << "pg120-images has no chapters — spine is empty";
+}
+
+TEST_F(RealBookTest, Pg120Images_AllChapters) {
+  OPEN_BOOK_OR_SKIP("microreader/sd/books/pg120-images.epub");
+  verify_all_chapters();
 }
 
 TEST(RegressionTest, SnowCrash) {

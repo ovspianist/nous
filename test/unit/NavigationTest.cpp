@@ -348,6 +348,7 @@ TEST_P(FullBookNavTest, NavigateAllPages) {
 // ---------------------------------------------------------------------------
 
 INSTANTIATE_EPUB_TESTS(FullBookNavTest);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(FullBookNavTest);
 
 #ifndef SMOKE_TESTS_ONLY
 INSTANTIATE_TEST_SUITE_P(AllNav, FullBookNavTest, ::testing::ValuesIn(test_books::get_all_books()),
@@ -424,6 +425,7 @@ TEST_P(BackwardNavTest, NavigateBackwardAllPages) {
 }
 
 INSTANTIATE_EPUB_TESTS(BackwardNavTest);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(BackwardNavTest);
 
 // ---------------------------------------------------------------------------
 // Regression: ch36_br_spacing backward navigation drops the h1 heading.

@@ -391,7 +391,14 @@ XmlError XmlReader::next_event(XmlEvent& event) {
 
 XmlError XmlReader::parse_delimited(const char* start_delim, size_t start_len, const char* end_delim, size_t end_len,
                                     XmlEvent& event, XmlEventType type) {
-  // Verify start delimiter
+  // Verify start delimiter — if the view is too short, try to refill first
+  if (view_len() < start_len) {
+    if (remaining_ == 0)
+      return XmlError::InvalidState;
+    XmlError err = advance(pos_);
+    if (err != XmlError::Ok)
+      return XmlError::InvalidState;
+  }
   if (view_len() < start_len || std::memcmp(view(), start_delim, start_len) != 0) {
     return XmlError::InvalidState;
   }

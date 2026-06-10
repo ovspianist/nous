@@ -6,6 +6,7 @@
 
 #include "ImageDecoder.h"
 #include "XmlReader.h"
+#include "../HeapLog.h"
 
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
@@ -373,7 +374,12 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
 
   // Flat single-pass: process all events without delegating to sub-parsers.
   XmlEvent ev;
-  while (reader.next_event(ev) == XmlError::Ok) {
+  XmlError opf_exit_err = XmlError::Ok;
+  XmlEventType opf_exit_type = XmlEventType::EndOfFile;
+  for (;;) {
+    opf_exit_err = reader.next_event(ev);
+    if (opf_exit_err != XmlError::Ok) break;
+    opf_exit_type = ev.type;
     if (ev.type == XmlEventType::EndOfFile)
       break;
 
@@ -471,6 +477,10 @@ EpubError Epub::parse_opf(IZipFile& file, const std::string& opf_path, uint8_t* 
       }
     }
   }
+
+  MR_LOGI("opf", "parse loop exit: err=%d type=%d section=%d manifest=%u spine=%u",
+          (int)opf_exit_err, (int)opf_exit_type, (int)section,
+          (unsigned)manifest.size(), (unsigned)spine_.size());
 
   // Resolve toc NCX reference
   if (!toc_id_ref.empty() && ncx_file_idx >= 0) {

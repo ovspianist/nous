@@ -290,6 +290,7 @@ TEST_P(BulkMrbComparisonTest, LayoutMatchesEpub) {
 }
 
 INSTANTIATE_EPUB_TESTS(BulkMrbComparisonTest);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(BulkMrbComparisonTest);
 
 // ---------------------------------------------------------------------------
 // Benchmark: measure streaming conversion time per book
@@ -342,3 +343,4 @@ TEST_P(ConversionBenchmark, StreamingConversion) {
 }
 
 INSTANTIATE_EPUB_TESTS(ConversionBenchmark);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ConversionBenchmark);

@@ -187,6 +187,11 @@ struct TableOfContents {
   std::vector<TocEntry> entries;
   StringPool pool;
 
+  std::string_view label_view(const TocEntry& e) const { return e.label.view(pool); }
+  std::string_view fragment_view(const TocEntry& e) const { return e.fragment.view(pool); }
+  // Convenience overloads for legacy call sites that only have an index.
+  std::string_view label_view(size_t idx) const { return entries[idx].label.view(pool); }
+
   // Add an entry during parsing; uses the pool to store strings.
   void add_entry(std::string_view label, uint16_t file_idx, uint8_t depth, std::string_view fragment = {},
                  uint16_t para_index = 0) {

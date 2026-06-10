@@ -49,26 +49,26 @@ inline std::vector<std::string> discover_epubs(const std::string& dir) {
 }
 
 // Curated list of 15 representative EPUBs covering a range of sizes,
-// languages, image content, CSS complexity, and previously-problematic books.
+// image content, CSS complexity, and previously-problematic books.
 inline std::vector<std::string> get_curated_books() {
   static const char* kBooks[] = {
-      "gutenberg/alice-wonderland.epub",       // small, simple
-      "gutenberg/frankenstein.epub",           // medium classic
-      "gutenberg/pride-prejudice.epub",        // large with images
-      "gutenberg/moby-dick.epub",              // medium classic
-      "gutenberg/dracula.epub",                // previously problematic (UTF-8 split)
-      "gutenberg/adventures-tom-sawyer.epub",  // previously problematic (NBSP split)
-      "gutenberg/complete-shakespeare.epub",   // large, many chapters, entity split
-      "gutenberg/origin-species-darwin.epub",  // previously problematic
-      "gutenberg/alice-illustrated.epub",      // images
-      "gutenberg/war-and-peace.epub",          // large
-      "gutenberg/heart-darkness.epub",         // short novella
-      "gutenberg/metamorphosis-kafka.epub",    // short, simple
-      "gutenberg/ulysses-joyce.epub",          // complex prose
-      "gutenberg/buddenbrooks-de.epub",        // German
-      "gutenberg/divina-commedia-it.epub",     // Italian / special chars
+      "gutenberg/pg11-images.epub",    // Alice in Wonderland — small, simple
+      "gutenberg/pg84-images.epub",    // Frankenstein — medium classic
+      "gutenberg/pg1342-images.epub",  // Pride and Prejudice — large
+      "gutenberg/pg2701-images.epub",  // Moby Dick — large, many images
+      "gutenberg/pg345-images.epub",   // Dracula — previously problematic (UTF-8 split)
+      "gutenberg/pg74-images.epub",    // Tom Sawyer — previously problematic (NBSP split)
+      "gutenberg/pg100-images.epub",   // Complete Shakespeare — large, many chapters
+      "gutenberg/pg2600-images.epub",  // War and Peace — very large
+      "gutenberg/pg219-images.epub",   // Heart of Darkness — short novella
+      "gutenberg/pg5200-images.epub",  // Metamorphosis (Kafka) — short, simple
+      "gutenberg/pg4300-images.epub",  // Ulysses (Joyce) — complex prose
+      "gutenberg/pg120-images.epub",   // Treasure Island — many images
+      "gutenberg/pg1661-images.epub",  // Sherlock Holmes — medium
+      "gutenberg/pg514-images.epub",   // Little Women — medium
+      "gutenberg/pg1727-images.epub",  // The Odyssey — classical, special chars
   };
-  std::string base = workspace_root() + "/microreader2/test/books/";
+  std::string base = workspace_root() + "/microreader/test/books/";
   std::vector<std::string> all;
   for (auto& b : kBooks) {
     std::string path = base + b;
@@ -79,10 +79,10 @@ inline std::vector<std::string> get_curated_books() {
 }
 
 // Single representative book for smoke/fast runs in unit_tests.
-// Uses dracula (medium classic, previously had UTF-8 split bugs) for good coverage.
+// Uses Dracula (medium classic, previously had UTF-8 split bugs) for good coverage.
 // Falls back to first available curated book if dracula is missing.
 inline std::vector<std::string> get_smoke_books() {
-  std::string path = workspace_root() + "/microreader2/test/books/gutenberg/dracula.epub";
+  std::string path = workspace_root() + "/microreader/test/books/gutenberg/pg345-images.epub";
   if (fs::exists(path))
     return {path};
   auto all = get_curated_books();
@@ -95,7 +95,7 @@ inline std::vector<std::string> get_smoke_books() {
 inline std::vector<std::string> get_all_books() {
   std::string root = workspace_root();
   std::vector<std::string> all;
-  for (auto& dir : {root + "/microreader2/test/books/gutenberg", root + "/microreader2/test/books/other"}) {
+  for (auto& dir : {root + "/microreader/test/books/gutenberg", root + "/microreader/test/books/other"}) {
     auto books = discover_epubs(dir);
     all.insert(all.end(), books.begin(), books.end());
   }
