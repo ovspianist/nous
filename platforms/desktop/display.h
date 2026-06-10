@@ -79,11 +79,11 @@ class DesktopEmulatorDisplay final : public microreader::IDisplay {
       grayscale_revert_sim_();
   }
 
-  // Apply grayscale: overlay LSB+MSB gray pixels on top of existing BW image.
+  // Multi-pass anti-aliasing grayscale (kLutGrayscale encoding).
+  // bit=0 in both planes = paper white (unchanged); any set bit = gray shade.
   void grayscale_refresh(bool /*turnOffScreen*/ = false) override {
     if (gray_bw_.empty() || gray_red_.empty())
       return;
-    // Save pre-grayscale sim state so we can revert later.
     pre_gray_sim_ = sim_;
     in_grayscale_mode_ = true;
     for (int i = 0; i < kPixels; ++i) {
@@ -92,28 +92,34 @@ class DesktopEmulatorDisplay final : public microreader::IDisplay {
       const int x_buf = x + microreader::DisplayFrame::kPanelOffsetX;
       const std::size_t byte_idx = static_cast<std::size_t>(y * microreader::DisplayFrame::kStride + x_buf / 8);
       const uint8_t bit_mask = static_cast<uint8_t>(0x80u >> (x_buf & 7));
-      // Gray planes: cleared to 0x00, ink pixels set bits.
-      // Polarity: bit=0 in MBF glyph = ink, but the buffer was cleared to 0x00 (all ink)
-      // and draw_glyph writes ink pixels as bit-CLEAR. So after rendering:
-      //   bit=0 → gray pixel present (ink was drawn = bit cleared in the 0x00-cleared buffer)
-      //   bit=1 → no gray pixel (nothing drawn there... wait, buffer was 0x00)
-      // Actually: buffer starts 0x00, draw_glyph clears bits for ink. 0x00 has all bits 0.
-      // draw_glyph with white=false clears bits (already 0). With the old firmware,
-      // clearScreen(0x00) + drawing sets bits where gray pixels should be.
-      // Let me just use the same mapping as the old firmware:
-      const bool lsb_bit = (gray_bw_[byte_idx] & bit_mask) != 0;
+      const bool lsb_bit = (gray_bw_[byte_idx]  & bit_mask) != 0;
       const bool msb_bit = (gray_red_[byte_idx] & bit_mask) != 0;
-      // Only modify pixels that have gray data (at least one bit set).
       if (lsb_bit || msb_bit) {
-        // 2-bit gray: (MSB<<1)|LSB
-        // 01 = light gray, 10 = dark gray, 11 = darkest gray
-        if (msb_bit && lsb_bit)
-          sim_[i] = 0.35f;  // darkest gray
-        else if (msb_bit)
-          sim_[i] = 0.50f;  // dark gray
-        else
-          sim_[i] = 0.70f;  // light gray
+        if (msb_bit && lsb_bit)  sim_[i] = 0.35f;
+        else if (msb_bit)        sim_[i] = 0.50f;
+        else                     sim_[i] = 0.70f;
       }
+    }
+    render_();
+  }
+
+  // One-pass sleep image grayscale (kLutFactoryQuality encoding).
+  // state = (red_bit << 1) | bw_bit  →  0=black, 1=dark gray, 2=light gray, 3=white.
+  void grayscale_refresh_1pass(bool /*turnOffScreen*/ = false) override {
+    if (gray_bw_.empty() || gray_red_.empty())
+      return;
+    pre_gray_sim_ = sim_;
+    in_grayscale_mode_ = true;
+    static constexpr float kLevels[4] = {1.0f, 0.67f, 0.33f, 0.0f};
+    for (int i = 0; i < kPixels; ++i) {
+      const int y = i / microreader::DisplayFrame::kPhysicalWidth;
+      const int x = i % microreader::DisplayFrame::kPhysicalWidth;
+      const int x_buf = x + microreader::DisplayFrame::kPanelOffsetX;
+      const std::size_t byte_idx = static_cast<std::size_t>(y * microreader::DisplayFrame::kStride + x_buf / 8);
+      const uint8_t bit_mask = static_cast<uint8_t>(0x80u >> (x_buf & 7));
+      const int bw_bit  = (gray_bw_[byte_idx]  & bit_mask) ? 1 : 0;
+      const int red_bit = (gray_red_[byte_idx] & bit_mask) ? 1 : 0;
+      sim_[i] = kLevels[(red_bit << 1) | bw_bit];
     }
     render_();
   }
@@ -149,8 +155,8 @@ class DesktopEmulatorDisplay final : public microreader::IDisplay {
   std::vector<float> sim_;
   std::vector<float> pre_gray_sim_;  // sim_ snapshot before grayscale overlay
   bool in_grayscale_mode_ = false;
-  std::vector<uint8_t> gray_bw_;   // LSB plane staged for grayscale_refresh
-  std::vector<uint8_t> gray_red_;  // MSB plane staged for grayscale_refresh
+  std::vector<uint8_t> gray_bw_;   // BW RAM (state bit 0) staged for grayscale_refresh
+  std::vector<uint8_t> gray_red_;  // RED RAM (state bit 1) staged for grayscale_refresh
 
   // Simulate grayscale revert: restore the pre-grayscale BW state.
   void grayscale_revert_sim_() {

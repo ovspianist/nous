@@ -1,4 +1,5 @@
 Import("env")
+import hashlib
 import os
 import sys
 
@@ -15,11 +16,14 @@ asm_path = os.path.join(esp32_dir, "assets_embedded.S")
 build_assets.build(project_dir, bin_path)
 print(f"[generate_assets] assets.bin written ({os.path.getsize(bin_path):,} bytes)")
 
-# Generate a minimal assembly file that uses .incbin to embed the binary.
-# This is exactly what ESP-IDF's EMBED_FILES does internally, but done here
-# so CMake never needs to find or generate it itself.
+# Embed an MD5 of assets.bin as a comment so CMake detects content changes
+# and recompiles the .S file whenever assets.bin is updated.
+with open(bin_path, "rb") as bf:
+    blob_hash = hashlib.md5(bf.read()).hexdigest()
+
 bin_path_escaped = bin_path.replace("\\", "/")
 asm = f"""\
+    /* assets_md5: {blob_hash} */
     .section .rodata
     .global _binary_assets_bin_start
     .global _binary_assets_bin_end
@@ -29,4 +33,4 @@ _binary_assets_bin_end:
 """
 with open(asm_path, "w") as f:
     f.write(asm)
-print(f"[generate_assets] assets_embedded.S written")
+print(f"[generate_assets] assets_embedded.S written (blob md5={blob_hash})")

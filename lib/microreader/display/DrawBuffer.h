@@ -56,9 +56,13 @@ class IDisplay {
     (void)data;
   }
 
-  // Trigger a grayscale display refresh using a custom LUT.
+  // Trigger a grayscale display refresh using the multi-pass anti-aliasing LUT (kLutGrayscale).
   // Assumes BW RAM and RED RAM have already been written via write_ram_bw/write_ram_red.
   virtual void grayscale_refresh(bool turnOffScreen = false) {}
+
+  // Trigger a one-pass grayscale refresh using kLutFactoryQuality.
+  // RAM encoding: state = (red_bit << 1) | bw_bit; 0=white, 1=light, 2=dark, 3=black.
+  virtual void grayscale_refresh_1pass(bool turnOffScreen = false) {}
 
   // Revert grayscale overlay and restore prev_pixels into RED RAM.
   // Must be called while the buffer holding the pre-grayscale BW frame is still valid.
@@ -465,14 +469,15 @@ class DrawBuffer {
     display_.deep_sleep();
   }
 
-  // Load and show sleep image from MGR file stream directly into display buffers
+  // Load and show sleep image from MGR2 file (2bpp, 4 gray levels).
+  // state = (RED_bit << 1) | BW_bit; 0=black, 1=dark gray, 2=light gray, 3=white.
   bool show_sleep_image(const char* path) {
     FILE* f = std::fopen(path, "rb");
     if (!f)
       return false;
 
     char magic[4];
-    if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "MGR1", 4) != 0) {
+    if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "MGR2", 4) != 0) {
       std::fclose(f);
       return false;
     }
@@ -483,44 +488,34 @@ class DrawBuffer {
       return false;
     }
 
-    size_t in_stride = (w + 7) / 8;
-    auto read_plane_to_inactive = [&](bool is_bw_plane) {
-      fill(true);
+    const size_t src_stride = (static_cast<size_t>(w) + 3) / 4;
+    const long data_start = std::ftell(f);
+
+    // Two passes over the file: first extract BW bits (state & 1), then RED bits (state >> 1).
+    auto decode_pass = [&](bool red_bit) {
+      std::fseek(f, data_start, SEEK_SET);
+      fill(false);  // start all-zero; OR in bits that should be 1
+      uint8_t src_row[256];
       for (uint16_t y = 0; y < h && y < DisplayFrame::kPhysicalHeight; ++y) {
-        uint8_t row_buf[128];  // Max width ~1024
-        size_t to_read = std::min<size_t>(in_stride, sizeof(row_buf));
-        size_t read_len = std::fread(row_buf, 1, to_read, f);
-        if (read_len < in_stride) {
-          std::fseek(f, static_cast<long>(in_stride - read_len), SEEK_CUR);
+        size_t read_len = std::fread(src_row, 1, std::min<size_t>(src_stride, sizeof(src_row)), f);
+        if (read_len < src_stride)
+          std::fseek(f, static_cast<long>(src_stride - read_len), SEEK_CUR);
+        uint8_t* dst = inactive_() + static_cast<size_t>(y) * DisplayFrame::kStride;
+        for (int x = 0; x < static_cast<int>(w); x++) {
+          int state = (src_row[x / 4] >> (6 - (x % 4) * 2)) & 0x3;
+          if (red_bit ? (state >> 1) : (state & 1))
+            dst[x / 8] |= static_cast<uint8_t>(0x80 >> (x % 8));
         }
-
-        size_t dest_offset = static_cast<size_t>(y) * DisplayFrame::kStride;
-        size_t copy_bytes = std::min<size_t>(read_len, DisplayFrame::kStride);
-        std::memcpy(inactive_() + dest_offset, row_buf, copy_bytes);
-      }
-
-      if (h > DisplayFrame::kPhysicalHeight) {
-        std::fseek(f, static_cast<long>((h - DisplayFrame::kPhysicalHeight) * in_stride), SEEK_CUR);
-      }
-
-      if (is_bw_plane) {
-        // Draw text over BW plane before full refresh
-        const char* sleep_text = "sleeping...";
-        draw_text_centered(kWidth / 2, kHeight - 24, sleep_text, true);
-        full_refresh(RefreshMode::Full, false);
       }
     };
 
-    // Read planes
-    read_plane_to_inactive(true);  // BW plane
-
-    read_plane_to_inactive(false);  // LSB plane
+    decode_pass(false);
     display_.write_ram_bw(inactive_());
 
-    read_plane_to_inactive(false);  // MSB plane
+    decode_pass(true);
     display_.write_ram_red(inactive_());
 
-    display_.grayscale_refresh(/*turnOffScreen=*/true);
+    display_.grayscale_refresh_1pass(/*turnOffScreen=*/true);
     display_.deep_sleep();
 
     std::fclose(f);
@@ -540,21 +535,34 @@ class DrawBuffer {
       return false;
 
     bool ok = false;
-    if (size >= 8 && std::memcmp(start, "MGR1", 4) == 0) {
+    if (size >= 8 && std::memcmp(start, "MGR2", 4) == 0) {
       uint16_t w = start[4] | (start[5] << 8);
       uint16_t h = start[6] | (start[7] << 8);
-      size_t plane_bytes = static_cast<size_t>((w + 7) / 8) * h;
-      if (size >= 8 + plane_bytes * 3) {
-        const uint8_t* bw = start + 8;
-        const uint8_t* lsb = bw + plane_bytes;
-        const uint8_t* msb = lsb + plane_bytes;
+      const size_t src_stride = (static_cast<size_t>(w) + 3) / 4;
+      const size_t pixel_bytes = src_stride * static_cast<size_t>(h);
 
-        fill(true);
-        draw_image(bw, 0, 0, w, h);
-        draw_text_centered(kWidth / 2, kHeight - 24, "sleeping...", true);
-        full_refresh(RefreshMode::Full, false);
+      if (size >= 8 + pixel_bytes) {
+        const uint8_t* src = start + 8;
 
-        show_grayscale_image(lsb, msb, w, h);
+        auto decode_pass = [&](bool red_bit) {
+          fill(false);
+          for (uint16_t y = 0; y < h && y < DisplayFrame::kPhysicalHeight; ++y) {
+            const uint8_t* src_row = src + static_cast<size_t>(y) * src_stride;
+            uint8_t* dst = inactive_() + static_cast<size_t>(y) * DisplayFrame::kStride;
+            for (int x = 0; x < static_cast<int>(w); x++) {
+              int state = (src_row[x / 4] >> (6 - (x % 4) * 2)) & 0x3;
+              if (red_bit ? (state >> 1) : (state & 1))
+                dst[x / 8] |= static_cast<uint8_t>(0x80 >> (x % 8));
+            }
+          }
+        };
+
+        decode_pass(false);
+        display_.write_ram_bw(inactive_());
+        decode_pass(true);
+        display_.write_ram_red(inactive_());
+        display_.grayscale_refresh_1pass(/*turnOffScreen=*/true);
+        display_.deep_sleep();
         ok = true;
       }
     }
