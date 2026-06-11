@@ -115,7 +115,8 @@ void BookIndex::set_last_opened(std::string_view path, uint32_t order) {
 void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
   std::vector<std::pair<std::string, uint32_t>> old_orders;
   for (const auto& e : entries_)
-    old_orders.emplace_back(e.path.to_string(pool_), e.last_open_order);
+    if (e.last_open_order > 0)
+      old_orders.emplace_back(e.title.to_string(pool_) + '\x01' + e.author.to_string(pool_), e.last_open_order);
 
   entries_.clear();
   pool_.reset();
@@ -137,9 +138,11 @@ void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
     book.close();
     if (book.open(path.c_str(), buf.scratch_buf1(), buf.scratch_buf2(), false) == EpubError::Ok) {
       auto meta = book.metadata();
-      add_entry(path, meta.title, meta.author.value_or(""));
+      const std::string author = meta.author.value_or("");
+      add_entry(path, meta.title, author);
+      const std::string key = std::string(meta.title) + '\x01' + author;
       for (const auto& old : old_orders) {
-        if (old.first == path) {
+        if (old.first == key) {
           entries_.back().last_open_order = old.second;
           break;
         }
