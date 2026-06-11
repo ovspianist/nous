@@ -132,11 +132,6 @@ python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 32 --he
 
 ## Firmware Backup & Restore
 
-> **Note:** Built-in fonts and the default sleep image are embedded directly in the firmware
-> image (`EMBED_FILES`), so `firmware.bin` is a standard IDF binary that any web
-> flasher can validate and flash without issues. The tradeoff is that the assets
-> (~2 MB) consume DROM MMU pages.
-
 ```powershell
 # Backup running firmware partition
 python -m esptool --port COM4 read_flash 0x10000 0x650000 app0_backup.bin
