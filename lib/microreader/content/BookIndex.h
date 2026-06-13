@@ -46,6 +46,13 @@ class BookIndex {
   // entry only; call save() afterwards to persist.
   void set_last_opened(std::string_view path, uint32_t order);
 
+  // Remove the entry for `path`. No-op if not found. Call save() to persist.
+  void remove_entry(std::string_view path);
+
+  // Open `path` as an EPUB, extract its metadata, add/replace the index entry,
+  // and persist. Returns true on success. Requires a DrawBuffer for scratch space.
+  bool index_file(const std::string& path, DrawBuffer& buf);
+
   void clear_entries();
 
  private:
