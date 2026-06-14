@@ -21,7 +21,7 @@ There are three ways to transfer content while the device is connected via USB:
 
 ### Browser Manager
 
-Open [microreader-manager](https://cidvonhighwind.github.io/microreader/) in Chrome or Edge (Web Serial API). It provides a file browser, EPUB/font/sleep-image upload, and auto-reconnects when the page is refreshed.
+Open [microreader-manager](https://cidvonhighwind.github.io/microreader/) in Chrome, Edge, or Firefox (Web Serial API). It provides a file browser, EPUB/font/sleep-image upload, and auto-reconnects when the page is refreshed.
 
 ### Calibre Plugin
 
