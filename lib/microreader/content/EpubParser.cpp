@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "../HeapLog.h"
+#include "HtmlEntities.h"
 #include "ImageDecoder.h"
 #include "XmlReader.h"
 
@@ -189,51 +190,14 @@ static std::string decode_entities(const std::string& text) {
     if (text[i] == '&') {
       size_t semi = text.find(';', i);
       if (semi != std::string::npos && semi - i < 12) {
-        std::string entity = text.substr(i + 1, semi - i - 1);
-        if (entity == "amp")
-          result += '&';
-        else if (entity == "lt")
-          result += '<';
-        else if (entity == "gt")
-          result += '>';
-        else if (entity == "quot")
-          result += '"';
-        else if (entity == "apos")
-          result += '\'';
-        else if (entity == "nbsp")
+        DecodedEntity decoded = decode_html_entity(text.data() + i + 1, semi - i - 1);
+        if (decoded.kind == DecodedEntity::Kind::Space) {
           result += ' ';
-        else if (!entity.empty() && entity[0] == '#') {
-          // Numeric entity
-          uint32_t code = 0;
-          if (entity.size() > 1 && entity[1] == 'x') {
-            for (size_t j = 2; j < entity.size(); ++j)
-              code = code * 16 + (std::isdigit(static_cast<unsigned char>(entity[j]))
-                                      ? entity[j] - '0'
-                                      : std::tolower(static_cast<unsigned char>(entity[j])) - 'a' + 10);
-          } else {
-            for (size_t j = 1; j < entity.size(); ++j)
-              code = code * 10 + (entity[j] - '0');
-          }
-          // UTF-8 encode
-          if (code < 0x80) {
-            result += static_cast<char>(code);
-          } else if (code < 0x800) {
-            result += static_cast<char>(0xC0 | (code >> 6));
-            result += static_cast<char>(0x80 | (code & 0x3F));
-          } else if (code < 0x10000) {
-            result += static_cast<char>(0xE0 | (code >> 12));
-            result += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (code & 0x3F));
-          } else {
-            result += static_cast<char>(0xF0 | (code >> 18));
-            result += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
-            result += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (code & 0x3F));
-          }
-          i = semi + 1;
-          continue;
+        } else if (decoded.kind == DecodedEntity::Kind::Utf8) {
+          result.append(decoded.utf8.data(), decoded.utf8.size());
+        } else if (decoded.kind == DecodedEntity::Kind::Codepoint) {
+          append_utf8(result, decoded.codepoint);
         } else {
-          // Unknown entity — keep as-is
           result += text.substr(i, semi - i + 1);
         }
         i = semi + 1;
@@ -817,71 +781,24 @@ class BodyParser {
         if (semi != SIZE_MAX) {
           const char* ent = t + i + 1;
           size_t ent_len = semi - i - 1;
-          char decoded_char = 0;
-          bool handled = false;
+          DecodedEntity decoded = decode_html_entity(ent, ent_len);
 
-          if (ent_len == 3 && ent[0] == 'a' && ent[1] == 'm' && ent[2] == 'p') {
-            decoded_char = '&';
-            handled = true;
-          } else if (ent_len == 2 && ent[0] == 'l' && ent[1] == 't') {
-            decoded_char = '<';
-            handled = true;
-          } else if (ent_len == 2 && ent[0] == 'g' && ent[1] == 't') {
-            decoded_char = '>';
-            handled = true;
-          } else if (ent_len == 4 && ent[0] == 'q' && ent[1] == 'u' && ent[2] == 'o' && ent[3] == 't') {
-            decoded_char = '"';
-            handled = true;
-          } else if (ent_len == 4 && ent[0] == 'a' && ent[1] == 'p' && ent[2] == 'o' && ent[3] == 's') {
-            decoded_char = '\'';
-            handled = true;
-          } else if (ent_len == 4 && ent[0] == 'n' && ent[1] == 'b' && ent[2] == 's' && ent[3] == 'p') {
+          if (decoded.kind == DecodedEntity::Kind::Space) {
             in_space = true;
-            i = semi + 1;
-            continue;
-          } else if (ent_len > 0 && ent[0] == '#') {
-            // Numeric entity
-            uint32_t code = 0;
-            if (ent_len > 1 && ent[1] == 'x') {
-              for (size_t j = 2; j < ent_len; ++j)
-                code = code * 16 + (std::isdigit((unsigned char)ent[j]) ? ent[j] - '0' : (ent[j] | 0x20) - 'a' + 10);
-            } else {
-              for (size_t j = 1; j < ent_len; ++j)
-                code = code * 10 + (ent[j] - '0');
-            }
-            if (code == 0xA0 || code == ' ' || code == '\t' || code == '\n' || code == '\r') {
-              in_space = true;
-              i = semi + 1;
-              continue;
-            }
-            PUSH_TEXT_EMIT_SPACE_();
-            // UTF-8 encode
-            if (code < 0x80) {
-              current_run_ += static_cast<char>(code);
-            } else if (code < 0x800) {
-              current_run_ += static_cast<char>(0xC0 | (code >> 6));
-              current_run_ += static_cast<char>(0x80 | (code & 0x3F));
-            } else if (code < 0x10000) {
-              current_run_ += static_cast<char>(0xE0 | (code >> 12));
-              current_run_ += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-              current_run_ += static_cast<char>(0x80 | (code & 0x3F));
-            } else {
-              current_run_ += static_cast<char>(0xF0 | (code >> 18));
-              current_run_ += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
-              current_run_ += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-              current_run_ += static_cast<char>(0x80 | (code & 0x3F));
-            }
             i = semi + 1;
             continue;
           }
 
-          if (handled) {
-            if (std::isspace((unsigned char)decoded_char)) {
-              in_space = true;
+          if (decoded.kind == DecodedEntity::Kind::Utf8 || decoded.kind == DecodedEntity::Kind::Codepoint) {
+            PUSH_TEXT_EMIT_SPACE_();
+            size_t mark = current_run_.size();
+            if (decoded.kind == DecodedEntity::Kind::Utf8) {
+              current_run_.append(decoded.utf8.data(), decoded.utf8.size());
             } else {
-              PUSH_TEXT_EMIT_SPACE_();
-              current_run_ += decoded_char;
+              append_utf8(current_run_, decoded.codepoint);
             }
+            if (text_transform_ != TextTransform::None)
+              apply_text_transform_inplace(current_run_, mark);
             i = semi + 1;
             continue;
           }

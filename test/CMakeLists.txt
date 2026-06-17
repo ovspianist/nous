@@ -59,6 +59,7 @@ FetchContent_MakeAvailable(googlebenchmark)
 set(LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../lib/microreader)
 
 add_library(microreader_content STATIC
+    ${LIB_DIR}/content/HtmlEntities.cpp
     ${LIB_DIR}/content/ZipReader.cpp
     ${LIB_DIR}/content/XmlReader.cpp
     ${LIB_DIR}/content/CssParser.cpp
