@@ -45,7 +45,21 @@ bool BookIndex::load(const std::string& index_file) {
   pool_.reset();
 
   char line[1024];
+  bool first_line = true;
+  bool needs_rebuild = false;
   while (std::fgets(line, sizeof(line), f) && static_cast<int>(entries_.size()) < MAX_BOOKS) {
+    if (first_line) {
+      first_line = false;
+      if (std::strncmp(line, "#microreader-index v", 20) == 0) {
+        uint32_t v = static_cast<uint32_t>(std::strtoul(line + 20, nullptr, 10));
+        if (v != INDEX_FORMAT_VERSION)
+          needs_rebuild = true;
+        continue;
+      } else {
+        needs_rebuild = true;
+      }
+    }
+
     // Remove newline
     size_t len = std::strlen(line);
     if (len > 0 && line[len - 1] == '\n') {
@@ -78,6 +92,8 @@ bool BookIndex::load(const std::string& index_file) {
   }
 
   std::fclose(f);
+  if (needs_rebuild)
+    return false;
   return true;
 }
 
@@ -85,6 +101,8 @@ bool BookIndex::save(const std::string& index_file) const {
   FILE* f = std::fopen(index_file.c_str(), "wb");
   if (!f)
     return false;
+
+  std::fprintf(f, "#microreader-index v%u\n", INDEX_FORMAT_VERSION);
 
   for (const auto& entry : entries_) {
     auto path_v = entry.path.view(pool_);
