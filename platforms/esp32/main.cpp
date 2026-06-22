@@ -323,8 +323,6 @@ extern "C" void app_main(void) {
       continue;
     }
 
-    // Mirror reader-active state for the serial 'Q' debug command.
-    g_reader_active = app.is_reader_active();
     strncpy(g_top_screen_name, app.top_screen_name(), sizeof(g_top_screen_name) - 1);
     g_top_screen_name[sizeof(g_top_screen_name) - 1] = '\0';
 

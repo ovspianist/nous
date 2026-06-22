@@ -23,63 +23,42 @@ class BookIndex {
  public:
   static BookIndex& instance();
 
-  // Returns true if `path` is under /sdcard/ and has a .epub extension
-  // (case-insensitive). Mirrors the filter used by build_index so that
-  // serial-side decisions about whether to update the index stay consistent
-  // with what a full rebuild would consider a "book".
+  // Returns true if path ends with .epub (case-insensitive) and has a non-empty stem.
   static bool is_book_path(const char* path);
 
   bool load(const std::string& index_file);
   bool save(const std::string& index_file) const;
 
-  // Scan a directory recursively, updating the index
-  // Uses DrawBuffer for scratch buffers and for showing loading progress.
+  // Recursively scan root_dir for EPUBs and rebuild the index.
   void build_index(const std::string& root_dir, DrawBuffer& buf);
 
-  const std::vector<BookIndexEntry>& entries() const {
-    return entries_;
-  }
+  const std::vector<BookIndexEntry>& entries() const { return entries_; }
+  const StringPool& pool() const { return pool_; }
 
-  const StringPool& pool() const {
-    return pool_;
-  }
-
-  // Monotonically increasing counter bumped on every mutation that changes the
-  // logical contents of the index (index_file / remove_path / rename_in_place
-  // / build_index). Observers (e.g. MainMenu) compare a cached value to detect
-  // that the index changed since they last rendered. load() and clear_entries()
-  // do NOT bump — they are state setup, not logical mutations.
+  // Bumped on every logical mutation (index_file / remove_path / rename_in_place /
+  // build_index). MainMenu caches this to detect external changes. load() does not
+  // bump; clear_entries() resets it to 0.
   uint64_t generation() const { return generation_; }
 
-  // Add an entry; uses the pool to store strings. Returns false (and is a
-  // no-op) if MAX_BOOKS has been reached.
+  // Returns false (no-op) if MAX_BOOKS has been reached.
   bool add_entry(std::string_view path, std::string_view title, std::string_view author, uint32_t last_open_order = 0);
 
-  // Record that a book was opened. `order` should be a monotonically
-  // increasing counter (higher = more recently opened). Updates the in-memory
-  // entry only; call save() afterwards to persist.
+  // Updates in-memory entry only; call save() to persist.
   void set_last_opened(std::string_view path, uint32_t order);
 
-  // Remove the entry for `path`. No-op if not found. Call save() to persist.
+  // No-op if not found. Call save() to persist.
   void remove_entry(std::string_view path);
 
-  // Open `path` as an EPUB, extract its metadata, add/replace the index entry,
-  // and persist to `index_path`. Loads the existing .dat first (ensure_loaded_)
-  // so the on-disk index is never truncated when entries_ happens to be empty
-  // in memory (e.g. when called while MainMenu is stopped). Bumps generation.
+  // Open path as an EPUB, upsert its index entry, and save to index_path.
+  // Reloads from disk first if entries_ is empty, to avoid truncating the .dat.
   bool index_file(const std::string& path, const std::string& index_path, DrawBuffer& buf);
 
-  // Remove the entry for `path` and persist to `index_path`. Safe to call when
-  // entries_ is empty in memory — reloads from disk first. No-op (returns true,
-  // no save) if `path` isn't indexed. Bumps generation only when something
-  // actually changed.
+  // Remove path's entry and save to index_path. No-op (returns true) if not indexed.
+  // Reloads from disk first if entries_ is empty.
   bool remove_path(const std::string& path, const std::string& index_path);
 
-  // Update the path of an existing entry from `src` to `dst`, preserving
-  // title/author/last_open_order. Safe to call when entries_ is empty —
-  // reloads from disk first. Returns false (no save) if `src` isn't indexed;
-  // caller may then fall back to index_file(dst) to add it fresh. Bumps
-  // generation only on success.
+  // Rename src→dst in-place, preserving metadata. Returns false if src not indexed
+  // (caller may fall back to index_file). Reloads from disk first if entries_ is empty.
   bool rename_in_place(const std::string& src, const std::string& dst, const std::string& index_path);
 
   void clear_entries();
@@ -90,10 +69,8 @@ class BookIndex {
   uint64_t generation_ = 0;
   BookIndex() = default;
 
-  // If entries_ is empty, attempt to load from `index_path`. No-op if entries_
-  // is already populated or if the file doesn't exist. This is the key helper
-  // that prevents the on-disk index from being truncated when a mutation
-  // arrives while the in-memory cache has been cleared (e.g. MainMenu::stop).
+  // Loads from index_path if entries_ is empty, preventing .dat truncation
+  // when a mutation arrives after MainMenu::stop() cleared in-memory state.
   void ensure_loaded_(const std::string& index_path);
 };
 

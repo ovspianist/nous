@@ -35,9 +35,6 @@ BookIndex& BookIndex::instance() {
 
 bool BookIndex::is_book_path(const char* path) {
   if (!path) return false;
-  if (std::strncmp(path, "/sdcard/", 8) != 0) return false;
-  // Find the filename portion (after the last '/'). build_index filters on the
-  // filename length, so a bare ".epub" with no stem must be rejected.
   const char* slash = std::strrchr(path, '/');
   const char* name = slash ? slash + 1 : path;
   const size_t name_len = std::strlen(name);
@@ -61,6 +58,7 @@ bool BookIndex::add_entry(std::string_view path, std::string_view title, std::st
   entries_.push_back(entry);
   return true;
 }
+
 bool BookIndex::load(const std::string& index_file) {
   FILE* f = std::fopen(index_file.c_str(), "rb");
   if (!f)
@@ -283,7 +281,6 @@ void BookIndex::build_index(const std::string& root_dir, DrawBuffer& buf) {
     }
   };
 
-  // Count then process using the iterator
   iterate_epubs([&](const std::string& p) { total++; });
   MR_LOGI("index", "Found %d epub(s), indexing...", total);
   iterate_epubs(process_path);

@@ -128,9 +128,8 @@ inline void request_index_op(SerialIndexOp op, const char* a, const char* b = nu
 // line can interleave with 0x06 ACK bytes in the shared USB serial TX buffer.
 static volatile bool g_upload_in_progress = false;
 
-// Mirrors Application::is_reader_active() for the serial 'Q' debug command.
-// Updated once per main loop iteration.
-static volatile bool g_reader_active = false;
+// Screen name of the top/active screen, updated once per main loop iteration.
+// Used by the serial 'Q' debug command.
 static char g_top_screen_name[32] = "unknown";
 
 // Call from the main loop. Returns true (and copies into `out`) when a fresh
