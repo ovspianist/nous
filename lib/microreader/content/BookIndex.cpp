@@ -125,7 +125,7 @@ bool BookIndex::save(const std::string& index_file) const {
   if (!f)
     return false;
 
-  std::fprintf(f, "#microreader-index v%u\n", INDEX_FORMAT_VERSION);
+  std::fprintf(f, "#microreader-index v%lu\n", (unsigned long)INDEX_FORMAT_VERSION);
 
   for (const auto& entry : entries_) {
     auto path_v = entry.path.view(pool_);
