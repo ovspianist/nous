@@ -79,8 +79,13 @@ TEST_F(EpubTest, MultiChapterToc) {
 }
 
 TEST_F(EpubTest, WithCssStylesheet) {
+  // CSS is now loaded lazily per chapter — the cache is populated on first parse.
   open_fixture("with_css.epub");
-  EXPECT_GT(epub.stylesheet().rule_count(), 0u);
+  ASSERT_GT(epub.chapter_count(), 0u);
+  Chapter ch;
+  EXPECT_EQ(epub.parse_chapter(file, 0, ch), EpubError::Ok);
+  // After parsing, at least one CSS file should be cached.
+  EXPECT_GT(epub.css_cache().entry_count(), 0u);
 }
 
 TEST_F(EpubTest, WithImagesMetadata) {
