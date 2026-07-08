@@ -18,7 +18,11 @@ The first time you open a book there's a single conversion pass to a compact bin
 - Single-pass EPUB → `.mrb` conversion — fast cold open, instant everything after
 - Licensed under GPL v2
 
+**Demo Video**
+
 [![Microreader demo](https://img.youtube.com/vi/KPsLV7BLEz0/0.jpg)](https://www.youtube.com/shorts/KPsLV7BLEz0)
+
+https://www.youtube.com/shorts/KPsLV7BLEz0
 
 ## Installation
 
