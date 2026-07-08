@@ -2,8 +2,6 @@
 
 An EPUB reader for the [Xteink X4](https://xteink.com), written from scratch.
 
-<!-- demo video -->
-
 Built around one idea: do EPUB rendering really well and nothing else. No Wi-Fi, no Bluetooth, no sync. Just put EPUBs on the SD card and read them.
 
 The first time you open a book there's a single conversion pass to a compact binary format. After that — changing chapters, adjusting font size, tweaking settings — everything is instant.
@@ -19,6 +17,8 @@ The first time you open a book there's a single conversion pass to a compact bin
 - Customizable sleep screen with looping support
 - Single-pass EPUB → `.mrb` conversion — fast cold open, instant everything after
 - Licensed under GPL v2
+
+[![Microreader demo](https://img.youtube.com/vi/KPsLV7BLEz0/0.jpg)](https://www.youtube.com/shorts/KPsLV7BLEz0)
 
 ## Installation
 
@@ -45,7 +45,11 @@ You can copy files directly to the SD card, or transfer them over USB while the 
 
 Open [microreader-manager](https://cidvonhighwind.github.io/microreader/) in Chrome, Edge, or Firefox (Web Serial API). Provides a file browser, EPUB/font/sleep-image upload, and auto-reconnects on page refresh.
 
+![Microreader Manager](images/Microreader%20Manager.png)
+
 Also includes a **Font Generator** for building `.mfb` fonts in the browser with live device preview, size presets, and script/range presets.
+
+![Font Generator](images/Font%20Generator.png)
 
 ### Calibre Plugin
 
@@ -89,10 +93,13 @@ cmake --build build/desktop-debug --config Debug
 .\build\desktop-debug\Debug\microreader_desktop.exe
 ```
 
-| | | |
-|---|---|---|
-| ![Book list](images/main%20menu.png) | ![Reader](images/reader.png) | ![Chapters](images/chapters.png) |
-| ![Reading options](images/reading%20options.png) | ![Landscape](images/reader%20rotated.png) | ![Settings](images/settings.png) |
+| | |
+|---|---|
+| ![Book list](images/main%20menu.png) | ![Reader](images/reader.png) |
+
+![Reading options](images/reading%20options.png)
+
+![Settings](images/settings.png)
 
 ### ESP32 (PlatformIO)
 
