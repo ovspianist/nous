@@ -90,6 +90,12 @@ static std::string get_battery_display_label(uint8_t mode) {
   return "Battery: Icon";
 }
 
+static std::string get_list_align_label(uint8_t align) {
+  if (align == 1) return "List Align: Left";
+  if (align == 2) return "List Align: Right";
+  return "List Align: Center";
+}
+
 static std::string get_font_label(const std::string& font_path) {
   std::string label = "Font: ";
   if (font_path == "Bookerly" || font_path == "Alegreya") {
@@ -235,6 +241,9 @@ void SettingsScreen::on_start() {
   idx_conv_indicator_ = count();
   add_item(get_conv_indicator_label(app_ ? app_->show_converted_indicator() : false));
 
+  idx_list_align_ = count();
+  add_item(get_list_align_label(app_ ? app_->list_align() : 0));
+
   add_separator();
 
   // --- Controls ---
@@ -321,6 +330,14 @@ void SettingsScreen::on_select(int index) {
       bool v = !app_->show_converted_indicator();
       app_->set_show_converted_indicator(v);
       set_item_label(idx_conv_indicator_, get_conv_indicator_label(v));
+    }
+    return;
+  }
+  if (index == idx_list_align_) {
+    if (app_) {
+      uint8_t v = static_cast<uint8_t>((app_->list_align() + 1) % 3);
+      app_->set_list_align(v);
+      set_item_label(idx_list_align_, get_list_align_label(v));
     }
     return;
   }

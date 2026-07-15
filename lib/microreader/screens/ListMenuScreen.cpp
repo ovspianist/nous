@@ -41,6 +41,8 @@ void ListMenuScreen::start(DrawBuffer& buf, IRuntime& runtime) {
     ui_font_.init(kFontData_ui_small_mbf, kFontData_ui_small_mbf_size);
   if (!header_font_.valid())
     header_font_.init(kFontData_ui_header_mbf, kFontData_ui_header_mbf_size);
+  if (app_)
+    list_align_ = app_->list_align();
   const int prev_selected = selected_;
   clear_items();
   on_start_set_selection_ = false;
@@ -315,8 +317,8 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
     int iw = ui_font_.word_width(label, len, FontStyle::Regular);
 
     const int landscape_pad = (buf.rotation() == Rotation::Deg0) ? 10 : 0;
-    const int indent_px = align_left_ ? (32 + ((i < (int)indents_.size() ? indents_[i] : 0) * 20)) : 0;
-    const int max_item_w = align_left_ ? (W - 32 - landscape_pad - indent_px) : (W - 48);
+    const int indent_px = (list_align_ == 1) ? (32 + ((i < (int)indents_.size() ? indents_[i] : 0) * 20)) : 0;
+    const int max_item_w = (list_align_ == 1) ? (W - 32 - landscape_pad - indent_px) : (W - 48);
 
     if (iw > max_item_w) {
       const int budget = max_item_w - ellipsis_w;
@@ -339,12 +341,19 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
       iw = ui_font_.word_width(label, len, FontStyle::Regular);
     }
 
-    const int ix = align_left_ ? indent_px : (W - iw) / 2;
+    int ix;
+    if (list_align_ == 1)
+      ix = indent_px;
+    else if (list_align_ == 2)
+      ix = std::max(0, W - 16 - landscape_pad - iw);
+    else
+      ix = (W - iw) / 2;
+
     if (i == selected_) {
       const int bar_w = 3;
       const int sel_top = (font_size_idx_ == 0) ? y - 1 : y;
       const int bar_h = ui_font_.y_advance() + (font_size_idx_ == 0 ? 1 : 0);
-      if (align_left_) {
+      if (list_align_ == 1 || list_align_ == 2) {
         const int bar_x = 16;
         const int bar_width = W - 32 - landscape_pad;
         buf.fill_rect(bar_x + 1, sel_top, bar_width - 2, bar_h, false);

@@ -1,55 +1,82 @@
-# Mneme
+# Nous
 
-**Mneme** is a fork of [microreader](https://github.com/CidVonHighwind/microreader/) — an EPUB reader for the [Xteink X4](https://xteink.com) e-ink device (ESP32-C3).
+**Nous** is a personal fork of [microreader](https://github.com/CidVonHighwind/microreader/) by [CidVonHighwind](https://github.com/CidVonHighwind) — an open-source EPUB reader firmware for the [Xteink X4](https://xteink.com) e-ink device (ESP32-C3).
 
-> Version 0.1.0
+This fork extends the original with additional quality-of-life features while staying true to what makes microreader great: a focused, fast, no-nonsense reading experience.
 
-## What's New in Mneme
+Full credit and respect to the original project. This fork exists because of the excellent foundation it provides.
 
-- **Convert All** — batch-convert every un-converted EPUB from Settings, with per-book progress display
-- **Hide Arrows toggle** — hide/show navigation hint glyphs (◀▶▼▲) from list screens
-- **Converted Indicator toggle** — show `*` prefix next to converted book titles in the book list
-- **Battery Display toggle** — three modes: icon only, number only, or both
-- **Reading Stats** — per-book times opened and total reading time, stored in the bookmark file and viewable from Reader Options → Statistics
-- **Renamed to Mneme** — firmware title and UI updated throughout
+> Version 1.0.0 &nbsp;·&nbsp; Based on microreader 2.0-dev &nbsp;·&nbsp; GPL v2
+
+---
+
+## What's New
+
+| Feature | Description |
+|---------|-------------|
+| **Convert All** | Batch-convert every un-converted EPUB from Settings, with per-book progress |
+| **Converted Indicator** | Optional `*` prefix on converted book titles in the book list |
+| **Reading Stats** | Per-book open count and total reading time, viewable from Reader Options |
+| **Battery Display** | Three modes: icon only, number only, or both |
+| **List Alignment** | Choose center, left, or right alignment for all list screens |
+| **Hide Nav Arrows** | Toggle the navigation hint glyphs on/off |
+
+| | | |
+|---|---|---|
+| ![Alignment](images/allign.png) | ![Convert All](images/convertall.png) | ![Stats](images/stats.png) |
+
+---
 
 ## Installation
 
 > [!WARNING]
-> **Requires an unlocked Xteink X4.** Do not flash this on a locked device — you may be permanently stuck on that firmware.
+> **Requires an unlocked Xteink X4.** Do not flash on a locked device.
 
-Build from source (see [Building](#building) below) or flash a `.bin` from the [Releases](../../releases) page.
+Flash a `.bin` from the [Releases](../../releases) page using the [Crosspoint flash tool](https://crosspointreader.com/#flash-tools) (browser-based, no install needed), or with esptool:
 
 ```powershell
-python -m esptool --chip esp32c3 --port COM5 --baud 921600 write_flash 0x0 mneme.bin
+python -m esptool --chip esp32c3 --port COM5 --baud 921600 write_flash 0x0 nous.bin
 ```
 
-Replace `COM5` with your device's port. Hold BOOT while connecting if the device doesn't enter flash mode automatically.
+Replace `COM5` with your port. Hold BOOT while connecting if the device doesn't enter flash mode automatically.
+
+---
 
 ## Building
 
-### Desktop (emulator)
+### ESP32 Firmware (PlatformIO)
 
-Runs the full UI in an SDL2 window — no hardware needed. Drop `.epub` files in `sd/`, `.mfb` fonts in `sd/fonts/`.
+Open the project in VS Code with the PlatformIO extension installed and click **Build**, or use the CLI:
 
 ```powershell
-$env:PATH = "C:\Users\<username>\scoop\apps\mingw\current\bin;C:\Users\<username>\scoop\shims;$env:PATH"
+pio run
+```
+
+The output `.bin` will be at `.pio\build\esp32c3\firmware.bin`.
+
+### Desktop Emulator
+
+Runs the full UI in an SDL2 window — no hardware needed. Drop `.epub` files in `sd/`.
+
+```powershell
 cmake -B build/desktop-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ "-DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5" platforms/desktop
 cmake --build build/desktop-debug --config Debug
 .\build\desktop-debug\microreader_desktop.exe
 ```
 
-### ESP32 (PlatformIO)
+---
 
-```powershell
-$env:USERPROFILE\.platformio\penv\Scripts\pio.exe run -t upload
-```
+## License
+
+GPL v2 — see [LICENSE](LICENSE).
+
+This project is a fork of [microreader](https://github.com/CidVonHighwind/microreader/) and inherits its GPL v2 license. All additions and modifications in this fork are released under the same terms.
 
 ---
 
-## Original Microreader README
+## Original microreader README
 
-Everything below is from the original [microreader](https://github.com/CidVonHighwind/microreader/) project by [CidVonHighwind](https://github.com/CidVonHighwind).
+Everything below is from the original [microreader](https://github.com/CidVonHighwind/microreader/) project.
 
 ---
 
@@ -144,8 +171,6 @@ Configure in **Settings → Sleep Image**: **Auto** cycles through all images in
 
 ### Desktop (emulator)
 
-The desktop build runs the full reader UI in an SDL2 window on Windows, Linux, or macOS — no hardware needed. It uses an `sd/` folder in the working directory as the virtual SD card: drop `.epub` files there to read them, `.mfb` fonts in `sd/fonts/`, and sleep images in `sd/.sleep/`.
-
 ```powershell
 cmake -S platforms/desktop -B build/desktop-debug -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5"
 cmake --build build/desktop-debug --config Debug
@@ -163,14 +188,9 @@ cmake --build build/desktop-debug --config Debug
 ### ESP32 (PlatformIO)
 
 ```powershell
-# Build + flash
 $env:USERPROFILE\.platformio\penv\Scripts\pio.exe run -t upload
-
-# Serial monitor
 $env:USERPROFILE\.platformio\penv\Scripts\pio.exe device monitor --baud 115200
 ```
-
-Upload baud: 921600.
 
 ### Tests
 
@@ -178,19 +198,8 @@ Upload baud: 921600.
 cd test
 cmake -B build2 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
 cmake --build build2 --config Debug
-
-.\build2\Debug\unit_tests.exe          # fast (~375 tests, <1s)
-.\build2\Debug\microreader_tests.exe   # includes real EPUB integration tests
-```
-
-### QEMU (no hardware needed)
-
-```powershell
-# Terminal 1
-python tools/run_qemu.py --with-books
-
-# Terminal 2
-python tools/test_books.py --port socket://localhost:4444 --pages 20 --delay 0.1
+.\build2\Debug\unit_tests.exe
+.\build2\Debug\microreader_tests.exe
 ```
 
 ## Project Structure
@@ -211,123 +220,30 @@ resources/                Fonts, sleep images
 
 ## Serial Command Line
 
-`tools/serial_cmd.py` talks to the device over USB serial using the same CMND protocol as the browser manager. It has two modes:
-
-**Non-interactive** — pass flags and exit. Useful for scripting and CI:
+`tools/serial_cmd.py` talks to the device over USB serial using the same CMND protocol as the browser manager.
 
 ```powershell
-python tools/serial_cmd.py --port COM5 --upload "book.epub"          # upload an EPUB
-python tools/serial_cmd.py --port COM5 --upload-dir "path/to/dir"    # upload all EPUBs in a folder (skips duplicates)
-python tools/serial_cmd.py --port COM5 --upload-sleep "image.bmp"    # upload a sleep image
-python tools/serial_cmd.py --port COM5 --upload-sd-font "font.mfb"   # upload a font to SD card
-python tools/serial_cmd.py --port COM5 --list                        # list books on device
-```
-
-**Interactive** — a REPL for manual control:
-
-```powershell
+python tools/serial_cmd.py --port COM5 --upload "book.epub"
+python tools/serial_cmd.py --port COM5 --list
 python tools/serial_cmd.py --port COM5
 ```
 
-Interactive commands include `open`, `rm`, `upload`, `btn` (simulate button presses), `test` (open every book and watch for pass/fail), `bench` (conversion benchmark), and more. Type `help` once connected for the full list.
-
-## Font Generation
-
-UI fonts (the bitmap fonts used for the device interface) are built from source using `tools/generate_font.py` and embedded as headers:
-
-```powershell
-python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 14 --header lib/microreader/display/ui_font_small.h --bw-only --ranges ui
-python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 18 --header lib/microreader/display/ui_font_medium.h --bw-only --ranges ui
-python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 24 --header lib/microreader/display/ui_font_large.h --bw-only --ranges ui
-python tools/generate_font.py resources/fonts/terminus/Terminus-Bold.ttf 32 --header lib/microreader/display/ui_font_header.h --bw-only --ranges ui
-```
-
-Reader fonts (`.mfb`) are generated via the browser **Font Generator** in the [microreader-manager](https://cidvonhighwind.github.io/microreader/). SD card fonts must fit within 3.375 MB (`0x360000` bytes including the 4 KB header).
-
 ## Hyphenation
 
-Uses the [Liang/TeX algorithm](https://tug.org/docs/liang/) with pattern files compiled into binary tries by [Typst hypher](https://github.com/typst/hypher). Supported languages: EN, DE, FR, ES, IT, NL, PT, PL, RU. Language is detected automatically from the EPUB's `xml:lang` attribute.
-
-Trie data is embedded as `constexpr` byte arrays in `lib/microreader/content/hyphenation/Liang/` — no heap allocation, no flash reads at runtime (placed in DROM on ESP32).
-
-<details>
-<summary>Adding a new language</summary>
-
-1. Download the `.bin` from [typst/hypher/tries](https://github.com/typst/hypher/tree/main/tries) into `tools/hyphenation/`
-2. Generate the header: `python tools/generate_trie_header.py tools/hyphenation/<lang>.bin lib/microreader/content/hyphenation/Liang/hyph-<lang>.trie.h <lang>`
-3. Add the new enum value to `HyphenationLang` in `Hyphenation.h`
-4. Add a `#include` + `case` in `Hyphenation.cpp` (`hyphenate_word`) and an `ieq` check in `detect_language`
-
-</details>
+Uses the [Liang/TeX algorithm](https://tug.org/docs/liang/) with pattern files compiled into binary tries by [Typst hypher](https://github.com/typst/hypher). Supported languages: EN, DE, FR, ES, IT, NL, PT, PL, RU.
 
 ## Firmware Backup & Restore
 
-The default X4 firmware uses two app partitions — `app0` (at `0x10000`) and `app1` (at `0x650000`). A small OTA data sector at `0xE000` records which one to boot. When you flash new firmware directly with esptool, the OTA data may still point to the other partition, causing the device to boot the old firmware — use `switch_partition.py` to fix that.
-
-Replace `COM5` with your port (`/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS).
-
-### Backup
-
 ```powershell
-# Full 16 MB flash
+# Backup full flash
 python -m esptool --chip esp32c3 --port COM5 read_flash 0x0 0x1000000 firmware_backup.bin
 
-# app0 only (faster)
-python -m esptool --chip esp32c3 --port COM5 read_flash 0x10000 0x640000 app0_backup.bin
-
-# app1 only
-python -m esptool --chip esp32c3 --port COM5 read_flash 0x650000 0x640000 app1_backup.bin
-```
-
-### Restore
-
-```powershell
-# Full flash
+# Restore
 python -m esptool --chip esp32c3 --port COM5 write_flash 0x0 firmware_backup.bin
 
-# app0 only
-python -m esptool --chip esp32c3 --port COM5 write_flash 0x10000 app0_backup.bin
-
-# app1 only
-python -m esptool --chip esp32c3 --port COM5 write_flash 0x650000 app1_backup.bin
-```
-
-### Switch boot partition
-
-```powershell
+# Switch boot partition
 python tools/switch_partition.py app0 --port COM5 --flash
-python tools/switch_partition.py app1 --port COM5 --flash
 ```
-
-## Calibre Plugin Development
-
-The plugin source lives in `tools/calibre-plugin/`. It bundles `pyserial` because Calibre's embedded Python doesn't include it.
-
-### Build
-
-```bash
-cd tools/calibre-plugin
-python build.py             # packages __init__.py + serial/ into microreader.zip
-python build.py --install   # ...and also copies it into Calibre's plugins folder
-```
-
-### Debug
-
-```powershell
-.\launch-debug.ps1   # equivalent to: calibre-debug -g
-```
-
-All `print()` calls in `__init__.py` appear in that terminal, prefixed with `[Microreader]`.
-
-### Protocol smoke test (no Calibre needed)
-
-```powershell
-& "C:\Program Files\Calibre2\calibre-debug.exe" -e test.py
-```
-
-Opens the serial port directly and verifies device detection and the CMND protocol without starting the full Calibre GUI.
-
----
 
 ## License
 

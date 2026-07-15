@@ -137,6 +137,9 @@ class Application {
   uint8_t battery_display() const { return battery_display_; }
   void set_battery_display(uint8_t v) { battery_display_ = v <= 2 ? v : 0; save_settings_(); }
 
+  uint8_t list_align() const { return list_align_; }
+  void set_list_align(uint8_t v) { list_align_ = v <= 2 ? v : 0; save_settings_(); }
+
   bool invert_menu_buttons() const {
     return invert_menu_buttons_;
   }
@@ -276,6 +279,7 @@ class Application {
   bool show_nav_arrows_ = true;
   bool show_converted_indicator_ = false;
   uint8_t battery_display_ = 0;  // 0=icon, 1=number, 2=both
+  uint8_t list_align_ = 0;       // 0=center, 1=left, 2=right
 
   MainMenu menu_;
   ReaderScreen reader_;

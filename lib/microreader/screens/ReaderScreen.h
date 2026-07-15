@@ -184,7 +184,12 @@ class ReaderScreen final : public IScreen {
   // Stats accessors — valid while book is open or after stop() (values persist until next start()).
   std::string book_title() const { return mrb_.metadata().title; }
   uint32_t times_opened() const { return times_opened_; }
-  uint64_t reading_ms_total() const { return reading_ms_total_; }
+  uint64_t reading_ms_total() const {
+    uint64_t total = reading_ms_total_;
+    if (open_ok_ && app_ && session_start_ms_ > 0)
+      total += static_cast<uint64_t>(app_->uptime_ms() - session_start_ms_);
+    return total;
+  }
 
   // Access to user-adjustable display settings (read/write by Application for persistence).
   ReaderSettings& reader_settings() {

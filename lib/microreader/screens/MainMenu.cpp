@@ -44,7 +44,7 @@ static bool ci_less(std::string_view a, std::string_view b) {
 }
 
 void MainMenu::on_start() {
-  title_ = "Mneme";
+  title_ = "Nous";
 
   if (!app_->data_dir_) {
     needs_scan_ = false;

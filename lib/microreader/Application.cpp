@@ -371,6 +371,7 @@ void microreader::Application::save_settings_() {
   std::fprintf(f, "show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
   std::fprintf(f, "show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
   std::fprintf(f, "battery_display=%u\n", static_cast<unsigned>(battery_display_));
+  std::fprintf(f, "list_align=%u\n", static_cast<unsigned>(list_align_));
 
   std::fclose(f);
 }
@@ -462,6 +463,8 @@ void microreader::Application::load_settings_() {
       show_converted_indicator_ = (uval != 0);
     else if (std::sscanf(line, "battery_display=%u", &uval) == 1)
       battery_display_ = static_cast<uint8_t>(uval <= 2 ? uval : 0);
+    else if (std::sscanf(line, "list_align=%u", &uval) == 1)
+      list_align_ = static_cast<uint8_t>(uval <= 2 ? uval : 0);
   }
   std::fclose(f);
 

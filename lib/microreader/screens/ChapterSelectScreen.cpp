@@ -16,7 +16,7 @@ void ChapterSelectScreen::populate(const TableOfContents& toc, uint16_t current_
 }
 
 void ChapterSelectScreen::on_start() {
-  set_alignment_left(true);
+  set_list_align(1);
   title_ = (toc_ && !toc_->entries.empty()) ? "Chapters" : "No chapters";
   if (toc_) {
     for (const auto& entry : toc_->entries)

@@ -212,6 +212,9 @@ void ReaderOptionsScreen::on_start() {
     add_item(link_label);
   }
 
+  idx_stats_ = count();
+  add_item("Statistics");
+
   // Separator between chapter navigation and text layout settings.
   if (settings_ && app_ && has_toc)
     add_separator();
@@ -275,10 +278,6 @@ void ReaderOptionsScreen::on_start() {
     idx_rotate_display_ = count();
     add_item(fmt_setting(tmp, sizeof(tmp), "Display", app_ && app_->rotate_display() ? "Landscape" : "Portrait"));
   }
-
-  add_separator();
-  idx_stats_ = count();
-  add_item("Statistics");
 
   // Restore selection, adjusting for Links appearing or disappearing.
   int sel = prev_selected_;

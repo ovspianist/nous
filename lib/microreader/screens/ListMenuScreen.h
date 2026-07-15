@@ -50,8 +50,12 @@ class ListMenuScreen : public IScreen {
   std::string subtitle2_;
   std::string subtitle3_;
 
-  void set_alignment_left(bool left) {
-    align_left_ = left;
+  // 0 = center (default), 1 = left, 2 = right
+  void set_list_align(uint8_t align) {
+    list_align_ = align;
+  }
+  uint8_t list_align() const {
+    return list_align_;
   }
 
   void add_item(const std::string& label, int indent = 0) {
@@ -159,7 +163,7 @@ class ListMenuScreen : public IScreen {
   int hold_frames_up_ = 0;
   int hold_frames_down_ = 0;
 
-  bool align_left_ = false;
+  uint8_t list_align_ = 0;  // 0=center, 1=left, 2=right
   bool on_start_set_selection_ = false;
   bool force_redraw_ = false;
 
