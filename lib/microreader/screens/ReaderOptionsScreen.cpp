@@ -193,7 +193,7 @@ void ReaderOptionsScreen::on_start() {
 
   clear_items();
   idx_justify_ = idx_padding_h_ = idx_padding_v_ = idx_line_spacing_ = idx_progress_ = idx_progress_scope_ =
-      idx_chapters_ = idx_pub_fonts_ = idx_rotate_display_ = idx_links_ = -1;
+      idx_chapters_ = idx_pub_fonts_ = idx_rotate_display_ = idx_links_ = idx_stats_ = -1;
 
   char tmp[40];
 
@@ -275,6 +275,10 @@ void ReaderOptionsScreen::on_start() {
     idx_rotate_display_ = count();
     add_item(fmt_setting(tmp, sizeof(tmp), "Display", app_ && app_->rotate_display() ? "Landscape" : "Portrait"));
   }
+
+  add_separator();
+  idx_stats_ = count();
+  add_item("Statistics");
 
   // Restore selection, adjusting for Links appearing or disappearing.
   int sel = prev_selected_;
@@ -376,6 +380,14 @@ void ReaderOptionsScreen::on_select(int index) {
   }
   if (index == idx_links_) {
     app_->push_screen(ScreenId::Links);
+    return;
+  }
+  if (index == idx_stats_) {
+    if (app_) {
+      auto* r = app_->reader();
+      app_->stats_screen()->set_book_stats(r->book_title(), r->times_opened(), r->reading_ms_total());
+      app_->push_screen(ScreenId::Stats);
+    }
     return;
   }
   return;

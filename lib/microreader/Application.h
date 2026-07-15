@@ -9,12 +9,14 @@
 #include "ScreenManager.h"
 #include "display/DrawBuffer.h"
 #include "screens/ChapterSelectScreen.h"
+#include "screens/ConvertAllScreen.h"
 #include "screens/IScreen.h"
 #include "screens/LinksScreen.h"
 #include "screens/MainMenu.h"
 #include "screens/ReaderOptionsScreen.h"
 #include "screens/ReaderScreen.h"
 #include "screens/SettingsScreen.h"
+#include "screens/StatsScreen.h"
 #include "screens/demo/BouncingBallDemo.h"
 #include "screens/demo/GrayscaleDemo.h"
 
@@ -29,6 +31,8 @@ enum class ScreenId : uint8_t {
   ReaderOptions,
   ChapterSelect,
   Links,
+  ConvertAll,
+  Stats,
   BouncingBall,
   GrayscaleDemo,
 };
@@ -117,6 +121,21 @@ class Application {
   MainMenu* main_menu() {
     return &menu_;
   }
+  ConvertAllScreen* convert_all_screen() {
+    return &convert_all_;
+  }
+  StatsScreen* stats_screen() {
+    return &stats_;
+  }
+
+  bool show_nav_arrows() const { return show_nav_arrows_; }
+  void set_show_nav_arrows(bool v) { show_nav_arrows_ = v; save_settings_(); }
+
+  bool show_converted_indicator() const { return show_converted_indicator_; }
+  void set_show_converted_indicator(bool v) { show_converted_indicator_ = v; save_settings_(); }
+
+  uint8_t battery_display() const { return battery_display_; }
+  void set_battery_display(uint8_t v) { battery_display_ = v <= 2 ? v : 0; save_settings_(); }
 
   bool invert_menu_buttons() const {
     return invert_menu_buttons_;
@@ -254,12 +273,18 @@ class Application {
 
   ScreenManager screen_mgr_;
 
+  bool show_nav_arrows_ = true;
+  bool show_converted_indicator_ = false;
+  uint8_t battery_display_ = 0;  // 0=icon, 1=number, 2=both
+
   MainMenu menu_;
   ReaderScreen reader_;
   SettingsScreen settings_;
   ReaderOptionsScreen reader_options_;
   ChapterSelectScreen chapter_select_;
   LinksScreen links_screen_;
+  ConvertAllScreen convert_all_;
+  StatsScreen stats_;
 
 #ifdef MICROREADER_ENABLE_DEMOS
   BouncingBallDemo bouncing_ball_;

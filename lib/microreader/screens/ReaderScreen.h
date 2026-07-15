@@ -132,6 +132,10 @@ class ReaderScreen final : public IScreen {
   bool buf_was_touched_ = false;
   bool cache_only_ = false;
 
+  uint32_t times_opened_ = 0;
+  uint64_t reading_ms_total_ = 0;
+  uint32_t session_start_ms_ = 0;
+
   // Navigation history: stack of positions pushed before following a hyperlink.
   struct NavHistoryEntry {
     size_t chapter_idx;
@@ -177,6 +181,11 @@ class ReaderScreen final : public IScreen {
   void load_position_();
 
  public:
+  // Stats accessors — valid while book is open or after stop() (values persist until next start()).
+  std::string book_title() const { return mrb_.metadata().title; }
+  uint32_t times_opened() const { return times_opened_; }
+  uint64_t reading_ms_total() const { return reading_ms_total_; }
+
   // Access to user-adjustable display settings (read/write by Application for persistence).
   ReaderSettings& reader_settings() {
     return reader_settings_;

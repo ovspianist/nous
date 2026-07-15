@@ -1,3 +1,58 @@
+# Mneme
+
+**Mneme** is a fork of [microreader](https://github.com/CidVonHighwind/microreader/) — an EPUB reader for the [Xteink X4](https://xteink.com) e-ink device (ESP32-C3).
+
+> Version 0.1.0
+
+## What's New in Mneme
+
+- **Convert All** — batch-convert every un-converted EPUB from Settings, with per-book progress display
+- **Hide Arrows toggle** — hide/show navigation hint glyphs (◀▶▼▲) from list screens
+- **Converted Indicator toggle** — show `*` prefix next to converted book titles in the book list
+- **Battery Display toggle** — three modes: icon only, number only, or both
+- **Reading Stats** — per-book times opened and total reading time, stored in the bookmark file and viewable from Reader Options → Statistics
+- **Renamed to Mneme** — firmware title and UI updated throughout
+
+## Installation
+
+> [!WARNING]
+> **Requires an unlocked Xteink X4.** Do not flash this on a locked device — you may be permanently stuck on that firmware.
+
+Build from source (see [Building](#building) below) or flash a `.bin` from the [Releases](../../releases) page.
+
+```powershell
+python -m esptool --chip esp32c3 --port COM5 --baud 921600 write_flash 0x0 mneme.bin
+```
+
+Replace `COM5` with your device's port. Hold BOOT while connecting if the device doesn't enter flash mode automatically.
+
+## Building
+
+### Desktop (emulator)
+
+Runs the full UI in an SDL2 window — no hardware needed. Drop `.epub` files in `sd/`, `.mfb` fonts in `sd/fonts/`.
+
+```powershell
+$env:PATH = "C:\Users\Isaac\scoop\apps\mingw\current\bin;C:\Users\Isaac\scoop\shims;$env:PATH"
+cmake -B build/desktop-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ "-DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5" platforms/desktop
+cmake --build build/desktop-debug --config Debug
+.\build\desktop-debug\microreader_desktop.exe
+```
+
+### ESP32 (PlatformIO)
+
+```powershell
+$env:USERPROFILE\.platformio\penv\Scripts\pio.exe run -t upload
+```
+
+---
+
+## Original Microreader README
+
+Everything below is from the original [microreader](https://github.com/CidVonHighwind/microreader/) project by [CidVonHighwind](https://github.com/CidVonHighwind).
+
+---
+
 # Microreader
 
 An EPUB reader for the [Xteink X4](https://xteink.com), written from scratch.

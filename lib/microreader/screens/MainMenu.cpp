@@ -44,7 +44,7 @@ static bool ci_less(std::string_view a, std::string_view b) {
 }
 
 void MainMenu::on_start() {
-  title_ = "Microreader";
+  title_ = "Mneme";
 
   if (!app_->data_dir_) {
     needs_scan_ = false;
@@ -143,14 +143,28 @@ std::string_view MainMenu::get_item_label(int index) const {
     return {};
   const StringPool& pool = BookIndex::instance().pool();
   const BookEntry& e = entries_[real];
+  const bool star = e.mrb_exists;
+
   if (list_format_ == BookListFormat::TitleOnly) {
+    if (star) {
+      label_buf_ = "* ";
+      label_buf_ += e.title_ref.view(pool);
+      return label_buf_;
+    }
     return e.title_ref.view(pool);
   } else if (list_format_ == BookListFormat::Filename) {
+    if (star) {
+      label_buf_ = "* ";
+      label_buf_ += filename_sv(e.path);
+      return label_buf_;
+    }
     return filename_sv(e.path);
   } else {
     label_buf_ = std::string(e.title_ref.view(pool));
     label_buf_ += " - ";
     label_buf_ += e.author_ref.view(pool);
+    if (star)
+      label_buf_ = "* " + label_buf_;
     return std::string_view(label_buf_);
   }
 }
@@ -161,12 +175,23 @@ void MainMenu::populate_list_() {
   separator_visual_index_ = -1;
 
   const StringPool& bpool = BookIndex::instance().pool();
+  const bool check_mrb = app_ && app_->data_dir_ && app_->show_converted_indicator();
   for (const auto& idx : BookIndex::instance().entries()) {
     BookEntry e;
     e.path = idx.path.to_string(bpool);
     e.title_ref = idx.title;
     e.author_ref = idx.author;
     e.last_open_order = idx.last_open_order;
+    if (check_mrb) {
+      const char* name = e.path.c_str();
+      const char* sep = std::strrchr(name, '/');
+      if (sep) name = sep + 1;
+      const char* dot = std::strrchr(name, '.');
+      std::string stem(name, dot ? static_cast<size_t>(dot - name) : std::strlen(name));
+      std::string mrb_path = std::string(app_->data_dir_) + "/cache/" + stem + "/book.mrb";
+      FILE* mf = std::fopen(mrb_path.c_str(), "rb");
+      if (mf) { std::fclose(mf); e.mrb_exists = true; }
+    }
     entries_.push_back(std::move(e));
   }
 

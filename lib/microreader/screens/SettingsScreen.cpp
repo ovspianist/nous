@@ -76,6 +76,20 @@ static std::string get_sleep_image_label(const std::string& path) {
   return label;
 }
 
+static std::string get_nav_arrows_label(bool shown) {
+  return std::string("Nav Arrows: ") + (shown ? "Show" : "Hide");
+}
+
+static std::string get_conv_indicator_label(bool shown) {
+  return std::string("Converted Mark: ") + (shown ? "On" : "Off");
+}
+
+static std::string get_battery_display_label(uint8_t mode) {
+  if (mode == 1) return "Battery: Number";
+  if (mode == 2) return "Battery: Icon & Number";
+  return "Battery: Icon";
+}
+
 static std::string get_font_label(const std::string& font_path) {
   std::string label = "Font: ";
   if (font_path == "Bookerly" || font_path == "Alegreya") {
@@ -212,6 +226,15 @@ void SettingsScreen::on_start() {
   idx_sleep_image_ = count();
   add_item(get_sleep_image_label(sleep_images_[sleep_image_sel_idx_]));
 
+  idx_nav_arrows_ = count();
+  add_item(get_nav_arrows_label(app_ ? app_->show_nav_arrows() : true));
+
+  idx_battery_display_ = count();
+  add_item(get_battery_display_label(app_ ? app_->battery_display() : 0));
+
+  idx_conv_indicator_ = count();
+  add_item(get_conv_indicator_label(app_ ? app_->show_converted_indicator() : false));
+
   add_separator();
 
   // --- Controls ---
@@ -270,9 +293,42 @@ void SettingsScreen::on_start() {
   idx_grayscale_demo_ = count();
   add_item("Grayscale Demo");
 #endif
+
+  add_separator();
+  idx_convert_all_ = count();
+  add_item("Convert All Books");
 }
 
 void SettingsScreen::on_select(int index) {
+  if (index == idx_nav_arrows_) {
+    if (app_) {
+      bool v = !app_->show_nav_arrows();
+      app_->set_show_nav_arrows(v);
+      set_item_label(idx_nav_arrows_, get_nav_arrows_label(v));
+    }
+    return;
+  }
+  if (index == idx_battery_display_) {
+    if (app_) {
+      uint8_t v = static_cast<uint8_t>((app_->battery_display() + 1) % 3);
+      app_->set_battery_display(v);
+      set_item_label(idx_battery_display_, get_battery_display_label(v));
+    }
+    return;
+  }
+  if (index == idx_conv_indicator_) {
+    if (app_) {
+      bool v = !app_->show_converted_indicator();
+      app_->set_show_converted_indicator(v);
+      set_item_label(idx_conv_indicator_, get_conv_indicator_label(v));
+    }
+    return;
+  }
+  if (index == idx_convert_all_) {
+    if (app_)
+      app_->push_screen(ScreenId::ConvertAll);
+    return;
+  }
 #ifdef MICROREADER_ENABLE_DEMOS
   if (index == idx_bouncing_ball_) {
     app_->push_screen(ScreenId::BouncingBall);

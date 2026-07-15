@@ -8,7 +8,7 @@ if(POLICY CMP0141)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "Embedded")
 endif()
 
-project(microreader_desktop CXX)
+project(microreader_desktop C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,6 +83,8 @@ add_library(microreader_core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../lib/microreader/screens/ChapterSelectScreen.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../lib/microreader/screens/LinksScreen.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../lib/microreader/screens/ReaderOptionsScreen.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../lib/microreader/screens/ConvertAllScreen.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../lib/microreader/screens/StatsScreen.cpp
 )
 target_include_directories(microreader_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../lib
@@ -99,6 +101,11 @@ target_link_libraries(microreader_desktop PRIVATE
     microreader_core
     SDL2::SDL2-static
 )
+# Statically link MinGW runtime so the exe runs without libstdc++/libgcc DLLs.
+if(MINGW)
+  target_link_options(microreader_desktop PRIVATE -static-libgcc -static-libstdc++)
+  target_link_libraries(microreader_desktop PRIVATE -Wl,-Bstatic winpthread -Wl,-Bdynamic)
+endif()
 # Prevent SDL_main.h from renaming main() so we keep a plain console entry point.
 target_compile_definitions(microreader_desktop PRIVATE SDL_MAIN_HANDLED)
 # Generate a header with the repo-root sd/ path (avoids MSVC /D drive-letter colon issue).

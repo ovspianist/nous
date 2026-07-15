@@ -111,6 +111,7 @@ class MainMenu final : public ListMenuScreen {
     StringRef title_ref;
     StringRef author_ref;
     uint32_t last_open_order = 0;
+    bool mrb_exists = false;
   };
   std::vector<BookEntry> entries_;
   mutable std::string label_buf_;

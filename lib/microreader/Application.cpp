@@ -45,6 +45,8 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
   reader_options_.set_app(this);
   chapter_select_.set_app(this);
   links_screen_.set_app(this);
+  convert_all_.set_app(this);
+  stats_.set_app(this);
 
 #ifdef MICROREADER_ENABLE_DEMOS
   bouncing_ball_.set_app(this);
@@ -287,6 +289,10 @@ IScreen* microreader::Application::screen_for_(ScreenId id) {
       return &chapter_select_;
     case ScreenId::Links:
       return &links_screen_;
+    case ScreenId::ConvertAll:
+      return &convert_all_;
+    case ScreenId::Stats:
+      return &stats_;
 
 #ifdef MICROREADER_ENABLE_DEMOS
     case ScreenId::BouncingBall:
@@ -362,6 +368,9 @@ void microreader::Application::save_settings_() {
   if (!sleep_image_path_.empty())
     std::fprintf(f, "sleep_image=%s\n", sleep_image_path_.c_str());
   std::fprintf(f, "sleep_image_idx=%d\n", sleep_image_idx_);
+  std::fprintf(f, "show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
+  std::fprintf(f, "show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
+  std::fprintf(f, "battery_display=%u\n", static_cast<unsigned>(battery_display_));
 
   std::fclose(f);
 }
@@ -447,6 +456,12 @@ void microreader::Application::load_settings_() {
       sleep_image_path_ = sval;
     else if (std::sscanf(line, "sleep_image_idx=%u", &uval) == 1)
       sleep_image_idx_ = static_cast<int>(uval);
+    else if (std::sscanf(line, "show_nav_arrows=%u", &uval) == 1)
+      show_nav_arrows_ = (uval != 0);
+    else if (std::sscanf(line, "show_conv_ind=%u", &uval) == 1)
+      show_converted_indicator_ = (uval != 0);
+    else if (std::sscanf(line, "battery_display=%u", &uval) == 1)
+      battery_display_ = static_cast<uint8_t>(uval <= 2 ? uval : 0);
   }
   std::fclose(f);
 

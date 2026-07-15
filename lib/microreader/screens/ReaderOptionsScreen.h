@@ -164,6 +164,7 @@ class ReaderOptionsScreen final : public ListMenuScreen {
   int idx_chapters_ = -1;
   int idx_rotate_display_ = -1;
   int idx_links_ = -1;
+  int idx_stats_ = -1;
 
   // Page links set by ReaderScreen before pushing this screen.
   std::vector<PageLink> page_links_;

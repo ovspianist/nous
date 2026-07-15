@@ -1,6 +1,7 @@
 #include "ListMenuScreen.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "../HeapLog.h"
@@ -181,31 +182,49 @@ int ListMenuScreen::draw_header_(DrawBuffer& buf, int W, int H) const {
 //    Returns bottom_h = pixels reserved at the bottom (list must stay above).
 // ─────────────────────────────────────────────────────────────────────────────
 int ListMenuScreen::draw_bottom_(DrawBuffer& buf, int W, int H, std::optional<uint8_t> battery_pct) const {
+  const uint8_t bat_mode = (app_ && battery_pct.has_value()) ? app_->battery_display() : 0;
   if (battery_pct.has_value()) {
     const int bat_pct = battery_pct.value();
-    const int kBarW = 26;
-    const int kBarH = 8;
-    const int kBarX = (W - kBarW) / 2;
-    const int kBarY = H - kHintCenterY - kBarH / 2;  // centre the bar on the hint line
+    if (bat_mode == 0 || bat_mode == 2) {
+      const int kBarW = 26;
+      const int kBarH = 8;
+      const int kBarX = (W - kBarW) / 2;
+      const int kBarY = H - kHintCenterY - kBarH / 2;
 
-    // Outline: rounded corners.
-    buf.fill_rect(kBarX + 1, kBarY, kBarW - 2, 1, false);
-    buf.fill_rect(kBarX + 1, kBarY + kBarH - 1, kBarW - 2, 1, false);
-    buf.fill_rect(kBarX, kBarY + 1, 1, kBarH - 2, false);
-    buf.fill_rect(kBarX + kBarW - 1, kBarY + 1, 1, kBarH - 2, false);
+      buf.fill_rect(kBarX + 1, kBarY, kBarW - 2, 1, false);
+      buf.fill_rect(kBarX + 1, kBarY + kBarH - 1, kBarW - 2, 1, false);
+      buf.fill_rect(kBarX, kBarY + 1, 1, kBarH - 2, false);
+      buf.fill_rect(kBarX + kBarW - 1, kBarY + 1, 1, kBarH - 2, false);
 
-    // Fill bar: sloped right edge (fuller = wider).
-    const int max_fill = kBarW - 4;
-    const int filled = (bat_pct * max_fill) / 100;
-    if (filled > 0) {
-      buf.fill_row(kBarY + 5, kBarX + 2, kBarX + 2 + std::min(filled + 3, max_fill), false);
-      buf.fill_row(kBarY + 4, kBarX + 2, kBarX + 2 + std::min(filled + 2, max_fill), false);
-      buf.fill_row(kBarY + 3, kBarX + 2, kBarX + 2 + std::min(filled + 1, max_fill), false);
-      buf.fill_row(kBarY + 2, kBarX + 2, kBarX + 2 + std::min(filled, max_fill), false);
+      const int max_fill = kBarW - 4;
+      const int filled = (bat_pct * max_fill) / 100;
+      if (filled > 0) {
+        buf.fill_row(kBarY + 5, kBarX + 2, kBarX + 2 + std::min(filled + 3, max_fill), false);
+        buf.fill_row(kBarY + 4, kBarX + 2, kBarX + 2 + std::min(filled + 2, max_fill), false);
+        buf.fill_row(kBarY + 3, kBarX + 2, kBarX + 2 + std::min(filled + 1, max_fill), false);
+        buf.fill_row(kBarY + 2, kBarX + 2, kBarX + 2 + std::min(filled, max_fill), false);
+      }
+
+      if (bat_mode == 2 && ui_font_.valid()) {
+        char num_buf[8];
+        const int nlen = std::snprintf(num_buf, sizeof(num_buf), "%d%%", bat_pct);
+        const int nw = ui_font_.word_width(num_buf, static_cast<size_t>(nlen), FontStyle::Regular);
+        const int nx = kBarX + kBarW + 4;
+        const int ny = H - kHintCenterY - (ui_font_.y_advance() + 1) / 2 + ui_font_.baseline();
+        buf.draw_text_proportional(nx, ny, num_buf, static_cast<size_t>(nlen), ui_font_, false);
+      }
+    } else if (bat_mode == 1 && ui_font_.valid()) {
+      char num_buf[8];
+      const int nlen = std::snprintf(num_buf, sizeof(num_buf), "%d%%", bat_pct);
+      const int nw = ui_font_.word_width(num_buf, static_cast<size_t>(nlen), FontStyle::Regular);
+      const int nx = (W - nw) / 2;
+      const int ny = H - kHintCenterY - (ui_font_.y_advance() + 1) / 2 + ui_font_.baseline();
+      buf.draw_text_proportional(nx, ny, num_buf, static_cast<size_t>(nlen), ui_font_, false);
     }
   }
 
-  draw_button_hints_(buf);
+  if (!app_ || app_->show_nav_arrows())
+    draw_button_hints_(buf);
   return kBottomAreaH;
 }
 

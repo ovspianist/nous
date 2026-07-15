@@ -277,6 +277,9 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   buf_ = &buf;
   book_key_.clear();
   pos_path_.clear();
+  times_opened_ = 0;
+  reading_ms_total_ = 0;
+  session_start_ms_ = 0;
   MR_LOGI("reader", "start: path='%s'", path_.c_str());
 
   if (app_ && app_->font_manager())
@@ -380,6 +383,9 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   saved_chapter_idx_ = 0;
   saved_page_pos_ = PagePosition{0, 0};
   load_position_();
+  times_opened_++;
+  if (app_) session_start_ms_ = app_->uptime_ms();
+  save_position_();
   load_chapter_(saved_chapter_idx_);
   if (!chapter_src_) {
     // Fallback to chapter 0 if saved index is invalid.
@@ -453,6 +459,8 @@ void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
 }
 
 void ReaderScreen::stop() {
+  if (open_ok_ && app_)
+    reading_ms_total_ += static_cast<uint64_t>(app_->uptime_ms() - session_start_ms_);
   image_size_fn_ = {};
   chapter_src_.reset();
   mrb_.close();
@@ -1056,12 +1064,14 @@ bool ReaderScreen::prev_page_() {
 void ReaderScreen::save_position_() {
   if (pos_path_.empty())
     return;
-  const std::string& path = pos_path_;
-  FILE* f = std::fopen(path.c_str(), "w");
+  FILE* f = std::fopen(pos_path_.c_str(), "w");
   if (!f)
     return;
-  std::fprintf(f, "%u %u %u %u\n", static_cast<unsigned>(chapter_idx_), static_cast<unsigned>(page_pos_.paragraph),
-               static_cast<unsigned>(page_pos_.offset), static_cast<unsigned>(page_pos_.text_offset));
+  std::fprintf(f, "%u %u %u %u %u %llu\n",
+               static_cast<unsigned>(chapter_idx_), static_cast<unsigned>(page_pos_.paragraph),
+               static_cast<unsigned>(page_pos_.offset), static_cast<unsigned>(page_pos_.text_offset),
+               static_cast<unsigned>(times_opened_),
+               static_cast<unsigned long long>(reading_ms_total_));
   std::fclose(f);
 }
 
@@ -1093,18 +1103,23 @@ void ReaderScreen::load_position_() {
 
   if (!f)
     return;
-  unsigned ch = 0, para = 0, line = 0, to = 0;
-  int scanned = std::fscanf(f, "%u %u %u %u", &ch, &para, &line, &to);
+  unsigned ch = 0, para = 0, line = 0, to = 0, topen = 0;
+  unsigned long long rms = 0;
+  int scanned = std::fscanf(f, "%u %u %u %u %u %llu", &ch, &para, &line, &to, &topen, &rms);
   std::fclose(f);
   if (scanned >= 3) {
     saved_chapter_idx_ = ch;
     saved_page_pos_ = PagePosition{static_cast<uint16_t>(para), static_cast<uint16_t>(line), static_cast<uint32_t>(to)};
-    MR_LOGI("reader", "Loaded pos ch=%u para=%u line=%u to=%u (scanned=%d)", ch, para, line, to, scanned);
-    // Write to the new path only when migrating from the legacy key.
+    if (scanned >= 5)
+      times_opened_ = static_cast<uint32_t>(topen);
+    if (scanned >= 6)
+      reading_ms_total_ = static_cast<uint64_t>(rms);
+    MR_LOGI("reader", "Loaded pos ch=%u para=%u line=%u to=%u opens=%u rms=%llu (scanned=%d)",
+            ch, para, line, to, topen, rms, scanned);
     if (migrating) {
       FILE* fw = std::fopen(pos_path_.c_str(), "w");
       if (fw) {
-        std::fprintf(fw, "%u %u %u %u\n", ch, para, line, to);
+        std::fprintf(fw, "%u %u %u %u %u %llu\n", ch, para, line, to, topen, rms);
         std::fclose(fw);
       }
     }
