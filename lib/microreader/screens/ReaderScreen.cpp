@@ -21,6 +21,13 @@
 
 namespace microreader {
 
+uint64_t ReaderScreen::reading_ms_total() const {
+  uint64_t total = reading_ms_total_;
+  if (open_ok_ && app_ && session_start_ms_ > 0)
+    total += static_cast<uint64_t>(app_->uptime_ms() - session_start_ms_);
+  return total;
+}
+
 // ---------------------------------------------------------------------------
 // ReaderScreen — path helpers
 // ---------------------------------------------------------------------------
