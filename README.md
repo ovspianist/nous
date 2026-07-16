@@ -31,9 +31,9 @@ microreader is great at what it does. This fork adds the things I personally wan
 |---|---|---|
 | <img src="images/autosleep.png" width="220" height="140"> | <img src="images/hidden.png" width="220" height="140"> | <img src="images/sleepalign.png" width="220" height="140"> |
 
-| Reader | | |
-|---|---|---|
-| <img src="images/reader.png" width="220" height="140"> | | |
+| Reader |
+|---|
+| <img src="images/reader.png"> |
 
 | Main Menu | Reader | Settings |
 |---|---|---|
