@@ -25,19 +25,19 @@ microreader is great at what it does. This fork adds the things I personally wan
 
 | Main Menu | Converter | Stats |
 |---|---|---|
-| ![Main Menu](images/mainmenu.png) | ![Converter](images/converter.png) | ![Stats](images/stats.png) |
+| <img src="images/mainmenu.png" width="220" height="140"> | <img src="images/converter.png" width="220" height="140"> | <img src="images/stats.png" width="220" height="140"> |
 
 | Auto Sleep | Hidden Books | Sleep & Align |
 |---|---|---|
-| ![Auto Sleep](images/autosleep.png) | ![Hidden Books](images/hidden.png) | ![Sleep Align](images/sleepalign.png) |
+| <img src="images/autosleep.png" width="220" height="140"> | <img src="images/hidden.png" width="220" height="140"> | <img src="images/sleepalign.png" width="220" height="140"> |
 
-| Reader | Main Menu (Portrait) | Reader (Portrait) |
+| Reader | | |
 |---|---|---|
-| ![Reader](images/reader.png) | ![Main Menu Portrait](images/mainmenuportrait.png) | ![Reader Portrait](images/readerportrait.png) |
+| <img src="images/reader.png" width="220" height="140"> | | |
 
-| Settings |
-|---|
-| ![Settings](images/settingsportrait.png) |
+| Main Menu | Reader | Settings |
+|---|---|---|
+| <img src="images/mainmenuportrait.png" width="220" height="140"> | <img src="images/readerportrait.png" width="220" height="140"> | <img src="images/settingsportrait.png" width="220" height="140"> |
 
 ---
 
