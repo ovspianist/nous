@@ -82,15 +82,6 @@ From the book list, long-press the Back button (~3 seconds) and release to open 
 
 ---
 
-## Changelog
-
-### v1.0.1
-- **Hidden Books** — `.hidden/` folder at SD card root; long-press Back on the book list to access
-- **Auto-Sleep Timeout** — Settings → Auto Sleep; cycles through 1 / 3 / 5 / 10 / 20 / 30 min / Off; default 10 min
-- **Fix** — Reading time in Stats now updates live while a book is open, not only after closing it
-
----
-
 ## Building
 
 ### ESP32 Firmware
