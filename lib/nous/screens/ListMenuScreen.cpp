@@ -96,8 +96,10 @@ int ListMenuScreen::nous_visible_from_(int scroll_off, int available_h) const {
 
 int ListMenuScreen::get_visible_count_(int H, int scroll_off) const {
   const int header_h = compute_header_h_();
-  if (theme_ == MenuTheme::Chronicle && subtitle_font_.valid() && subtitle_.empty())
-    return nous_visible_from_(scroll_off, H - header_h);
+  if ((theme_ == MenuTheme::Chronicle || force_chronicle_list_) && subtitle_font_.valid() && subtitle_.empty()) {
+    const int bot = (theme_ == MenuTheme::Chronicle) ? 0 : kBottomAreaH;
+    return nous_visible_from_(scroll_off, H - header_h - bot);
+  }
   if ((theme_ == MenuTheme::Stele || !subtitle_.empty()) && subtitle_font_.valid()) {
     static constexpr int kBarPadY = 6;
     return nous_visible_from_(scroll_off, H - header_h - (kBarPadY + subtitle_font_.y_advance() + kBarPadY + 1));
@@ -468,14 +470,18 @@ void ListMenuScreen::draw_list_(DrawBuffer& buf, int W, int H, int header_h, int
   }
 
   // ── Chronicle theme ───────────────────────────────────────────────────────
-  if (theme_ == MenuTheme::Chronicle && subtitle_font_.valid() && subtitle_.empty()) {
+  if ((theme_ == MenuTheme::Chronicle || force_chronicle_list_) && subtitle_font_.valid() && subtitle_.empty()) {
+    // Divider below header for Lyra sub-screens
+    if (force_chronicle_list_ && theme_ != MenuTheme::Chronicle)
+      buf.fill_rect(0, header_h, W, 1, false);
+
     static constexpr int kPadT = 5, kGap = 3, kPadB = 6;
     static constexpr int kLM = 14, kRM = 12;
     static constexpr int kSepH = 8;
     const int title_h = ui_font_.y_advance();
     const int sub_h = subtitle_font_.y_advance();
     const int slot_h = kPadT + title_h + kGap + sub_h + kPadB + 1;
-    const int available_h = H - header_h;
+    const int available_h = H - header_h - bottom_h;
 
     const int visible = nous_visible_from_(scroll_offset_, available_h);
     if (visible <= 0) return;

@@ -43,7 +43,7 @@ class ListMenuScreen : public IScreen {
   }
 
   // Global visual theme — affects all ListMenuScreen instances (static).
-  enum class MenuTheme : uint8_t { Chronicle = 0, Minimal = 1, Stele = 2, Codex = 3, Lyra = 4 };
+  enum class MenuTheme : uint8_t { Chronicle = 0, Minimal = 1, Stele = 2, Codex = 3, Lyra = 4, LyraExt = 5 };
   static void set_theme(MenuTheme t) { theme_ = t; }
   static MenuTheme theme() { return theme_; }
 
@@ -54,6 +54,8 @@ class ListMenuScreen : public IScreen {
   std::string subtitle_;
   std::string subtitle2_;
   std::string subtitle3_;
+
+  bool force_chronicle_list_ = false;  // use Chronicle-style rows regardless of global theme
 
   // 0 = center (default), 1 = left, 2 = right
   void set_list_align(uint8_t align) {

@@ -1,9 +1,11 @@
 #include "LyraScreen.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
 #include "../Application.h"
+#include "../content/Book.h"
 #include "../content/BookIndex.h"
 
 namespace microreader {
@@ -42,12 +44,49 @@ void LyraScreen::on_start() {
   idx_all_books_    = i++; add_item("All Books");
   idx_recent_books_ = i++; add_item("Recent Books");
   idx_settings_     = i++; add_item("Settings");
+
+  // Cover image: compute path and try to load or flag for lazy extraction.
+  cover_data_.clear();
+  cover_loaded_        = false;
+  cover_needs_extract_ = false;
+  cover_bin_path_.clear();
+  if (has_recent_ && app_ && app_->data_dir_) {
+    cover_bin_path_ = cover_bin_path(recent_path_.c_str(), app_->data_dir_);
+    FILE* chk = std::fopen(cover_bin_path_.c_str(), "rb");
+    if (chk) {
+      std::fclose(chk);
+      load_cover_data_();
+    } else {
+      cover_needs_extract_ = true;
+    }
+  }
+}
+
+void LyraScreen::load_cover_data_() {
+  cover_data_.clear();
+  cover_loaded_ = false;
+  cover_w_ = cover_h_ = 0;
+  if (cover_bin_path_.empty()) return;
+  FILE* f = std::fopen(cover_bin_path_.c_str(), "rb");
+  if (!f) return;
+  uint16_t hdr[2] = {};
+  if (std::fread(hdr, 2, 2, f) != 2) { std::fclose(f); return; }
+  cover_w_ = hdr[0];
+  cover_h_ = hdr[1];
+  const size_t stride = (cover_w_ + 7) / 8;
+  const size_t data_sz = stride * cover_h_;
+  if (data_sz == 0 || data_sz > 8192) { std::fclose(f); return; }
+  cover_data_.resize(data_sz);
+  if (std::fread(cover_data_.data(), 1, data_sz, f) == data_sz)
+    cover_loaded_ = true;
+  std::fclose(f);
 }
 
 void LyraScreen::on_select(int index) {
   if (!app_) return;
   if (index == idx_recent_ && has_recent_) {
     app_->record_book_opened(recent_path_);
+    app_->ensure_cover_bin(recent_path_);
     app_->reader()->set_path(recent_path_.c_str());
     app_->push_screen(ScreenId::Reader);
   } else if (index == idx_all_books_) {
@@ -60,6 +99,16 @@ void LyraScreen::on_select(int index) {
 }
 
 void LyraScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) {
+  // Lazy cover extraction: show loading bar, extract, then redraw.
+  if (cover_needs_extract_) {
+    cover_needs_extract_ = false;
+    buf.show_loading("Loading cover...", 0);
+    if (app_) app_->ensure_cover_bin(recent_path_);
+    load_cover_data_();
+    request_redraw();
+    return;
+  }
+
   // Long-press back (~3s) → Hidden Books; short press → no-op.
   const bool back_down = buttons.is_down(Button::Button0);
   ButtonState fwd = buttons;
@@ -84,18 +133,50 @@ void LyraScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& r
   ListMenuScreen::update(fwd, buf, runtime);
 }
 
+// Break text into lines fitting within max_w pixels using the given font style.
+static std::vector<std::string> wrap_text(const std::string& text, const BitmapFont& font,
+                                          int max_w, FontStyle style) {
+  std::vector<std::string> lines;
+  size_t i = 0;
+  const size_t n = text.size();
+  while (i < n) {
+    const size_t line_start = i;
+    size_t line_end = i;
+    bool first_word = true;
+    while (i < n) {
+      while (i < n && text[i] == ' ') ++i;
+      if (i >= n) break;
+      size_t word_end = i;
+      while (word_end < n && text[word_end] != ' ') ++word_end;
+      int w = font.word_width(text.c_str() + line_start, word_end - line_start, style);
+      if (w <= max_w || first_word) {
+        line_end = word_end;
+        i = word_end;
+        first_word = false;
+      } else {
+        break;  // i stays at start of overflowing word
+      }
+    }
+    lines.push_back(text.substr(line_start, line_end - line_start));
+  }
+  return lines;
+}
+
 void LyraScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) const {
   if (!ui_font_.valid()) return;
   const int W = buf.width();
   const int H = buf.height();
   buf.fill(true);
 
-  static constexpr int kPad      = 12;
-  static constexpr int kCardPadV = 20;
-  static constexpr int kSubGap   = 4;
-  static constexpr int kNavPadV  = 14;
-  static constexpr int kBotPad    = 5;
-  static constexpr int kBotMargin = 10;  // lift tooltip above screen edge
+  static constexpr int kPad        = 12;
+  static constexpr int kTopGap     = 36;   // gap between header rule and card
+  static constexpr int kCardPadV   = 20;
+  static constexpr int kSubGap     = 4;
+  static constexpr int kCoverGap   = 12;   // gap between cover and text column
+  static constexpr int kCardNavGap = 24;   // extra gap between card and nav items
+  static constexpr int kNavPadV    = 32;
+  static constexpr int kBotPad     = 5;
+  static constexpr int kBotMargin  = 10;
 
   const int ui_adv = ui_font_.y_advance();
   const int hf_adv = header_font_.valid() ? header_font_.y_advance() : ui_adv;
@@ -117,7 +198,7 @@ void LyraScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) 
   }
   y += hf_adv + 8;
   buf.fill_rect(0, y, W, 1, false);
-  y += 1;
+  y += 1 + kTopGap;
 
   // ── Bottom tooltip height (pre-compute so nav items don't overflow into it)
   const int bot_area_h = 1 + kBotPad + sf_adv + kBotPad + kBotMargin;
@@ -125,22 +206,58 @@ void LyraScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) 
 
   // ── Recent book card ─────────────────────────────────────────────────────
   if (has_recent_ && idx_recent_ >= 0) {
-    const int card_h = kCardPadV + ui_adv + kSubGap + sf_adv + kCardPadV;
+    // Determine text column bounds.
+    const int cover_col_w = cover_loaded_ ? kPad + static_cast<int>(cover_w_) + kCoverGap : 0;
+    const int text_x      = kPad + cover_col_w;
+    const int text_max_w  = W - text_x - kPad;
+
+    // Wrap title into lines, bold if supported.
+    const auto title_lines = wrap_text(recent_title_, ui_font_, text_max_w, FontStyle::Bold);
+    const int n_title = static_cast<int>(title_lines.size());
+
+    // Text group height: all title lines + gap + author.
+    const bool has_author = section_font_.valid() && !recent_author_.empty();
+    const int text_group_h = n_title * ui_adv + (has_author ? kSubGap + sf_adv : 0);
+
+    // Card height: enough for text (with padding) or cover (with padding), whichever is taller.
+    const int text_h = kCardPadV + text_group_h + kCardPadV;
+    const int card_h = cover_loaded_
+        ? std::max(text_h, static_cast<int>(cover_h_) + kCardPadV * 2)
+        : text_h;
+
     const bool sel = (selected() == idx_recent_);
     if (sel)
       buf.fill_rect(0, y, W, card_h, false);
-    buf.draw_text_proportional(kPad, y + kCardPadV + ui_font_.baseline(),
-                               recent_title_.c_str(), recent_title_.size(), ui_font_, sel);
-    if (section_font_.valid() && !recent_author_.empty())
-      buf.draw_text_proportional(kPad,
-                                 y + kCardPadV + ui_adv + kSubGap + section_font_.baseline(),
-                                 recent_author_.c_str(), recent_author_.size(), section_font_, sel);
-    y += card_h;
-    buf.fill_rect(0, y, W, 1, false);
-    y += 1;
+
+    // Cover on the LEFT.
+    if (cover_loaded_ && cover_w_ > 0 && cover_h_ > 0) {
+      const int img_x    = kPad;
+      const int img_y    = y + (card_h - static_cast<int>(cover_h_)) / 2;
+      const size_t stride = (cover_w_ + 7) / 8;
+      for (int row = 0; row < static_cast<int>(cover_h_); ++row)
+        buf.blit_1bit_row(img_x, img_y + row, cover_data_.data() + row * stride, cover_w_);
+    }
+
+    // Text group: vertically centered in card.
+    int ty = y + (card_h - text_group_h) / 2;
+    for (int li = 0; li < n_title; ++li) {
+      buf.draw_text_proportional(text_x, ty + ui_font_.baseline(),
+                                 title_lines[li].c_str(), title_lines[li].size(),
+                                 ui_font_, sel, FontStyle::Bold);
+      ty += ui_adv;
+    }
+    if (has_author) {
+      ty += kSubGap;
+      buf.draw_text_proportional(text_x, ty + section_font_.baseline(),
+                                 recent_author_.c_str(), recent_author_.size(),
+                                 section_font_, sel);
+    }
+
+    y += card_h + kCardNavGap;
+    // No divider after card.
   }
 
-  // ── Nav items ─────────────────────────────────────────────────────────────
+  // ── Nav items (no dividers in Lyra theme) ────────────────────────────────
   const int nav_row_h = kNavPadV + ui_adv + kNavPadV;
   struct NavItem { int idx; const char* label; };
   const NavItem nav[] = {
@@ -155,32 +272,25 @@ void LyraScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) 
       buf.fill_rect(0, y, W, nav_row_h, false);
     buf.draw_text_proportional(kPad, y + kNavPadV + ui_font_.baseline(), item.label, ui_font_, sel);
     y += nav_row_h;
-    if (y < bot_rule_y) {
-      buf.fill_rect(0, y, W, 1, false);
-      y += 1;
-    }
   }
 
   // ── Bottom tooltip ────────────────────────────────────────────────────────
-  // Order: Back | Select | [Down, Up] or [Up, Down] depending on invert setting.
   buf.fill_rect(0, bot_rule_y, W, 1, false);
   if (section_font_.valid()) {
     const BitmapFont& sf = section_font_;
     const bool inv = app_ && app_->invert_menu_buttons();
     const char* labels[] = {"Back", "Select", inv ? "Up" : "Down", inv ? "Down" : "Up"};
     static constexpr int kN = 4;
+    // Per-button nudges (pixels): +right, -left.
+    static constexpr int kNudge[kN] = {3, 10, -20, -5};
     int ws[kN];
-    int total_w = 0;
-    for (int i = 0; i < kN; ++i) {
+    for (int i = 0; i < kN; ++i)
       ws[i] = sf.word_width(labels[i], std::strlen(labels[i]), FontStyle::Regular);
-      total_w += ws[i];
-    }
-    const int gap = (W - 2 * kPad - total_w) / (kN - 1);
-    int hx = kPad;
+    const int slot_w = W / kN;
     const int ty = bot_rule_y + 1 + kBotPad + sf.baseline();
     for (int i = 0; i < kN; ++i) {
-      buf.draw_text_proportional(hx, ty, labels[i], sf, false);
-      hx += ws[i] + gap;
+      const int cx = slot_w * i + slot_w / 2 - ws[i] / 2 + kNudge[i];
+      buf.draw_text_proportional(cx, ty, labels[i], sf, false);
     }
   }
 }

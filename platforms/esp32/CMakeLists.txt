@@ -20,6 +20,7 @@ set(lib_sources
     ${LIB}/screens/StatsScreen.cpp
     ${LIB}/screens/HiddenBooksMenu.cpp
     ${LIB}/screens/LyraScreen.cpp
+    ${LIB}/screens/LyraExtScreen.cpp
     ${LIB}/screens/RecentBooksScreen.cpp
     ${LIB}/content/ZipReader.cpp
     ${LIB}/content/XmlReader.cpp

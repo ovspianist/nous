@@ -83,6 +83,9 @@ class Book {
   bool read_image_size(uint16_t entry_index, uint16_t& w, uint16_t& h, uint8_t* work_buf = nullptr,
                        size_t work_size = 0);
 
+  // Returns the zip entry index of the cover image, or -1 if not found.
+  int cover_zip_idx() const { return epub_.cover_zip_idx(); }
+
   // Access the underlying EPUB for advanced queries.
   const Epub& epub() const {
     return epub_;
@@ -93,10 +96,20 @@ class Book {
     return file_;
   }
 
+  // Extract and write cover image to cover_path as a 1-bit packed bitmap file.
+  // Header: uint16_t width, uint16_t height (LE), then packed row data.
+  // Returns true on success, false if no cover or decode failed.
+  bool write_cover_bin(const char* cover_path,
+                       uint8_t* work_buf = nullptr, size_t work_buf_size = 0);
+
  private:
   StdioZipFile file_;
   Epub epub_;
   bool file_open_ = false;
 };
+
+// Derive the cover.bin path for an epub file.
+// Returns: {data_dir}/cache/{epub_stem}/cover.bin
+std::string cover_bin_path(const char* epub_path, const char* data_dir);
 
 }  // namespace microreader

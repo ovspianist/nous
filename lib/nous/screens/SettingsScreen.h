@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "../Input.h"
 #include "../display/DrawBuffer.h"
 #include "ListMenuScreen.h"
@@ -73,10 +76,16 @@ class SettingsScreen final : public ListMenuScreen {
   std::string toast_original_label_;
   int toast_frames_ = 0;
 
-  bool theme_picker_open_ = false;
-  int  theme_picker_sel_  = 0;
+  // Generic popup picker for any multi-choice setting.
+  bool picker_open_   = false;
+  int  picker_sel_    = 0;
+  int  picker_target_ = -1;
+  std::string picker_title_;
+  std::vector<std::string> picker_options_;
 
-  void apply_theme_picker_(int theme_idx);
+  void open_picker_(const char* title, int target_idx, std::vector<std::string> opts, int cur_sel);
+  void apply_picker_(int sel);
+  void draw_picker_(DrawBuffer& buf) const;
   void clear_cache_();
 #ifdef ESP_PLATFORM
   void switch_ota_partition_();

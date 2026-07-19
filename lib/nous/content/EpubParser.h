@@ -152,6 +152,9 @@ class Epub {
   }
   int find_entry_index(const std::string& path) const;
 
+  // Returns the zip entry index of the cover image, or -1 if not found.
+  int cover_zip_idx() const { return cover_idx_; }
+
  private:
   ZipReader zip_;
   std::string root_dir_;  // e.g. "OEBPS/"

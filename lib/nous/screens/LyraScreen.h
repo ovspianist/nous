@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "ListMenuScreen.h"
 
@@ -39,6 +41,16 @@ class LyraScreen final : public ListMenuScreen {
   static constexpr int kHiddenHoldFrames = 15;
   int back_hold_frames_ = 0;
   bool back_was_down_   = false;
+
+  // Cover image for the most-recent book (1-bit packed, MSB first).
+  std::vector<uint8_t> cover_data_;
+  uint16_t cover_w_ = 0;
+  uint16_t cover_h_ = 0;
+  bool cover_loaded_       = false;
+  bool cover_needs_extract_ = false;
+  std::string cover_bin_path_;
+
+  void load_cover_data_();
 };
 
 }  // namespace microreader

@@ -13,6 +13,7 @@
 #include "screens/HiddenBooksMenu.h"
 #include "screens/IScreen.h"
 #include "screens/LinksScreen.h"
+#include "screens/LyraExtScreen.h"
 #include "screens/LyraScreen.h"
 #include "screens/MainMenu.h"
 #include "screens/RecentBooksScreen.h"
@@ -38,6 +39,7 @@ enum class ScreenId : uint8_t {
   Stats,
   HiddenBooks,
   Lyra,
+  LyraExt,
   RecentBooks,
   BouncingBall,
   GrayscaleDemo,
@@ -149,6 +151,9 @@ class Application {
   }
   LyraScreen* lyra_screen() {
     return &lyra_;
+  }
+  LyraExtScreen* lyra_ext_screen() {
+    return &lyra_ext_;
   }
   RecentBooksScreen* recent_books_screen() {
     return &recent_books_;
@@ -266,6 +271,11 @@ class Application {
   // counter in the index and persists both the index and settings.
   void record_book_opened(const std::string& path);
 
+  // Extract cover.bin for the given EPUB if it doesn't exist yet.
+  // No-op if data_dir is not set or the EPUB has no cover.
+  // Blocking — can take ~1s on first call for old books.
+  void ensure_cover_bin(const std::string& epub_path);
+
   // Navigate to a screen: push on top of the current screen (current stays on stack).
   // Or replace the current screen (pop it first, then push the new one).
   // safe to call from within a screen's update(); the transition happens after update() returns.
@@ -336,6 +346,7 @@ class Application {
   uint8_t menu_theme_ = 3;       // 3=Codex default
 
   LyraScreen lyra_;
+  LyraExtScreen lyra_ext_;
   RecentBooksScreen recent_books_;
   MainMenu menu_;
   ReaderScreen reader_;

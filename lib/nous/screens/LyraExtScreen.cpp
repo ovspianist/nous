@@ -1,0 +1,311 @@
+#include "LyraExtScreen.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
+#include "../Application.h"
+#include "../content/Book.h"
+#include "../content/BookIndex.h"
+
+namespace microreader {
+
+// Nearest-neighbour downscale of a 1-bit MSB-first bitmap into the draw buffer.
+static void blit_scaled_cover(DrawBuffer& buf, int dst_x, int dst_y,
+                               const uint8_t* data, int src_w, int src_h,
+                               int dst_w, int dst_h) {
+  if (dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) return;
+  const int src_stride = (src_w + 7) / 8;
+  const int dst_stride = (dst_w + 7) / 8;
+  uint8_t row_buf[80];  // supports up to 640px output columns
+  if (dst_stride > (int)sizeof(row_buf)) return;
+  for (int dy = 0; dy < dst_h; ++dy) {
+    const int sy = dy * src_h / dst_h;
+    const uint8_t* src_row = data + sy * src_stride;
+    std::memset(row_buf, 0xFF, static_cast<size_t>(dst_stride));
+    for (int dx = 0; dx < dst_w; ++dx) {
+      const int sx = dx * src_w / dst_w;
+      const int src_bit = (src_row[sx >> 3] >> (7 - (sx & 7))) & 1;
+      if (src_bit == 0)
+        row_buf[dx >> 3] &= static_cast<uint8_t>(~(1u << (7 - (dx & 7))));
+    }
+    buf.blit_1bit_row(dst_x, dst_y + dy, row_buf, dst_w);
+  }
+}
+
+// Draw a 1px border outline around a rectangle.
+static void draw_outline(DrawBuffer& buf, int x, int y, int w, int h) {
+  buf.fill_rect(x,         y,         w, 1, false);
+  buf.fill_rect(x,         y + h - 1, w, 1, false);
+  buf.fill_rect(x,         y,         1, h, false);
+  buf.fill_rect(x + w - 1, y,         1, h, false);
+}
+
+void LyraExtScreen::load_cover_(int i) {
+  auto& s = slots_[i];
+  s.cover_data.clear();
+  s.cover_loaded = false;
+  s.cover_w = s.cover_h = 0;
+  if (s.bin_path.empty()) return;
+  FILE* f = std::fopen(s.bin_path.c_str(), "rb");
+  if (!f) return;
+  uint16_t hdr[2] = {};
+  if (std::fread(hdr, 2, 2, f) != 2) { std::fclose(f); return; }
+  s.cover_w = hdr[0];
+  s.cover_h = hdr[1];
+  const size_t stride = (s.cover_w + 7) / 8;
+  const size_t data_sz = stride * s.cover_h;
+  if (data_sz == 0 || data_sz > 8192) { std::fclose(f); return; }
+  s.cover_data.resize(data_sz);
+  if (std::fread(s.cover_data.data(), 1, data_sz, f) == data_sz)
+    s.cover_loaded = true;
+  std::fclose(f);
+}
+
+void LyraExtScreen::on_start() {
+  if (app_ && app_->data_dir_) {
+    const std::string idx_path = std::string(app_->data_dir_) + "/book_index.dat";
+    BookIndex::instance().load(idx_path);
+  }
+
+  num_books_ = 0;
+  for (int i = 0; i < kMaxBooks; ++i) {
+    slots_[i] = BookSlot{};
+    idx_books_[i] = -1;
+  }
+
+  // Collect top-3 most recently opened books.
+  struct Raw { uint32_t order; std::string path; std::string title; };
+  std::vector<Raw> raw;
+  const StringPool& pool = BookIndex::instance().pool();
+  for (const auto& e : BookIndex::instance().entries()) {
+    if (e.last_open_order == 0) continue;
+    raw.push_back({e.last_open_order, e.path.to_string(pool), std::string(e.title.view(pool))});
+  }
+  std::stable_sort(raw.begin(), raw.end(), [](const Raw& a, const Raw& b) {
+    return a.order > b.order;
+  });
+
+  num_books_ = static_cast<int>(std::min(raw.size(), static_cast<size_t>(kMaxBooks)));
+
+  clear_items();
+  int item_idx = 0;
+  for (int i = 0; i < num_books_; ++i) {
+    idx_books_[i] = item_idx++;
+    add_item(raw[i].title);
+    slots_[i].path  = raw[i].path;
+    slots_[i].title = raw[i].title;
+  }
+  // Fill remaining book indices with -1 (already set above).
+
+  idx_all_books_    = item_idx++; add_item("All Books");
+  idx_recent_books_ = item_idx++; add_item("Recent Books");
+  idx_settings_     = item_idx++; add_item("Settings");
+
+  // Load or flag covers.
+  for (int i = 0; i < num_books_; ++i) {
+    auto& s = slots_[i];
+    if (app_ && app_->data_dir_) {
+      s.bin_path = cover_bin_path(s.path.c_str(), app_->data_dir_);
+      FILE* chk = std::fopen(s.bin_path.c_str(), "rb");
+      if (chk) {
+        std::fclose(chk);
+        load_cover_(i);
+      } else {
+        s.cover_needs_extract = true;
+      }
+    }
+  }
+}
+
+void LyraExtScreen::on_select(int index) {
+  if (!app_) return;
+  for (int i = 0; i < num_books_; ++i) {
+    if (index == idx_books_[i]) {
+      app_->record_book_opened(slots_[i].path);
+      app_->ensure_cover_bin(slots_[i].path);
+      app_->reader()->set_path(slots_[i].path.c_str());
+      app_->push_screen(ScreenId::Reader);
+      return;
+    }
+  }
+  if (index == idx_all_books_)    app_->push_screen(ScreenId::MainMenu);
+  else if (index == idx_recent_books_) app_->push_screen(ScreenId::RecentBooks);
+  else if (index == idx_settings_)     app_->push_screen(ScreenId::Settings);
+}
+
+void LyraExtScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) {
+  // Lazy cover extraction: handle one pending slot per frame.
+  for (int i = 0; i < num_books_; ++i) {
+    if (slots_[i].cover_needs_extract) {
+      slots_[i].cover_needs_extract = false;
+      buf.show_loading("Loading cover...", 0);
+      if (app_) app_->ensure_cover_bin(slots_[i].path);
+      load_cover_(i);
+      request_redraw();
+      return;
+    }
+  }
+
+  const bool back_down = buttons.is_down(Button::Button0);
+  ButtonState fwd = buttons;
+  if (back_down) {
+    if (back_hold_frames_ <= kHiddenHoldFrames) back_hold_frames_++;
+    fwd.pressed_latch &= ~(1u << static_cast<uint8_t>(Button::Button0));
+    uint8_t nc = 0;
+    for (uint8_t i = 0; i < fwd.press_history_count; ++i)
+      if (static_cast<Button>(fwd.press_history[i]) != Button::Button0)
+        fwd.press_history[nc++] = fwd.press_history[i];
+    fwd.press_history_count = nc;
+    back_was_down_ = true;
+  } else if (back_was_down_) {
+    back_was_down_ = false;
+    const int held = back_hold_frames_;
+    back_hold_frames_ = 0;
+    if (held >= kHiddenHoldFrames && app_)
+      app_->push_screen(ScreenId::HiddenBooks);
+    return;
+  }
+  ListMenuScreen::update(fwd, buf, runtime);
+}
+
+void LyraExtScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) const {
+  if (!ui_font_.valid()) return;
+  const int W = buf.width();
+  const int H = buf.height();
+  buf.fill(true);
+
+  static constexpr int kPad         = 12;
+  static constexpr int kTopGap      = 10;
+  static constexpr int kSlotGap     = 8;
+  static constexpr int kCoverTitleGap = 3;
+  static constexpr int kCardNavGap  = 12;
+  static constexpr int kNavPadV     = 10;
+  static constexpr int kBotPad      = 5;
+  static constexpr int kBotMargin   = 10;
+
+  const int ui_adv = ui_font_.y_advance();
+  const int hf_adv = header_font_.valid() ? header_font_.y_advance() : ui_adv;
+  const int sf_adv = section_font_.valid() ? section_font_.y_advance() : ui_adv;
+
+  // ── Header ───────────────────────────────────────────────────────────────
+  int y = 10;
+  if (header_font_.valid())
+    buf.draw_text_proportional(kPad, y + header_font_.baseline(), "NOUS", header_font_, false);
+  else
+    buf.draw_text_proportional(kPad, y + ui_font_.baseline(), "NOUS", ui_font_, false);
+
+  if (battery_pct) {
+    char pbuf[8];
+    std::snprintf(pbuf, sizeof(pbuf), "%u%%", static_cast<unsigned>(*battery_pct));
+    const BitmapFont& bf = section_font_.valid() ? section_font_ : ui_font_;
+    const int pw = bf.word_width(pbuf, std::strlen(pbuf), FontStyle::Regular);
+    buf.draw_text_proportional(W - kPad - pw, y + bf.baseline(), pbuf, bf, false);
+  }
+  y += hf_adv + 8;
+  buf.fill_rect(0, y, W, 1, false);
+  y += 1 + kTopGap;
+
+  // ── Bottom tooltip height pre-compute ────────────────────────────────────
+  const int bot_area_h = 1 + kBotPad + sf_adv + kBotPad + kBotMargin;
+  const int bot_rule_y = H - bot_area_h;
+
+  // ── 3 cover slots ────────────────────────────────────────────────────────
+  const int total_gap    = 2 * kSlotGap;
+  const int slot_w       = (W - 2 * kPad - total_gap) / 3;
+  const int cover_render_h = slot_w * 13 / 10;  // ~1.3 portrait ratio
+  const int title_area_h   = ui_adv;
+  const int slot_total_h   = cover_render_h + kCoverTitleGap + title_area_h;
+
+  static const char kEll[] = "...";
+
+  for (int i = 0; i < kMaxBooks; ++i) {
+    const int slot_x = kPad + i * (slot_w + kSlotGap);
+    const bool sel = (idx_books_[i] >= 0 && selected() == idx_books_[i]);
+
+    if (sel)
+      buf.fill_rect(slot_x - 1, y - 1, slot_w + 2, slot_total_h + 2, false);
+
+    if (i < num_books_) {
+      const auto& s = slots_[i];
+      if (s.cover_loaded && s.cover_w > 0 && s.cover_h > 0) {
+        blit_scaled_cover(buf, slot_x, y,
+                          s.cover_data.data(), s.cover_w, s.cover_h,
+                          slot_w, cover_render_h);
+      } else {
+        // Placeholder outline
+        draw_outline(buf, slot_x, y, slot_w, cover_render_h);
+      }
+
+      // Truncated title below cover
+      const int title_y = y + cover_render_h + kCoverTitleGap + ui_font_.baseline();
+      const std::string_view title_sv = s.title;
+      const int max_tw = slot_w;
+      int tw = ui_font_.word_width(title_sv.data(), title_sv.size(), FontStyle::Regular);
+      if (tw <= max_tw) {
+        buf.draw_text_proportional(slot_x, title_y, title_sv.data(), title_sv.size(), ui_font_, sel);
+      } else {
+        // Truncate with ellipsis
+        const int ell_w = ui_font_.word_width(kEll, 3, FontStyle::Regular);
+        const int budget = max_tw - ell_w;
+        size_t fit = 0;
+        const char* p = title_sv.data();
+        while (*p) {
+          const uint8_t b = static_cast<uint8_t>(*p);
+          const size_t cb = b < 0x80 ? 1u : b < 0xE0 ? 2u : b < 0xF0 ? 3u : 4u;
+          if (ui_font_.word_width(title_sv.data(), fit + cb, FontStyle::Regular) > budget) break;
+          fit += cb; p += cb;
+        }
+        char trunc[260];
+        const size_t cp = fit < 256 ? fit : 256;
+        std::memcpy(trunc, title_sv.data(), cp);
+        std::memcpy(trunc + cp, kEll, 3);
+        trunc[cp + 3] = '\0';
+        buf.draw_text_proportional(slot_x, title_y, trunc, cp + 3, ui_font_, sel);
+      }
+    } else {
+      // Empty slot outline
+      draw_outline(buf, slot_x, y, slot_w, cover_render_h);
+    }
+  }
+
+  y += slot_total_h + kCardNavGap;
+
+  // ── Nav items ────────────────────────────────────────────────────────────
+  const int nav_row_h = kNavPadV + ui_adv + kNavPadV;
+  struct NavItem { int idx; const char* label; };
+  const NavItem nav[] = {
+    {idx_all_books_,    "All Books"},
+    {idx_recent_books_, "Recent Books"},
+    {idx_settings_,     "Settings"},
+  };
+  for (const auto& item : nav) {
+    if (item.idx < 0) continue;
+    const bool sel = (selected() == item.idx);
+    if (sel)
+      buf.fill_rect(0, y, W, nav_row_h, false);
+    buf.draw_text_proportional(kPad, y + kNavPadV + ui_font_.baseline(), item.label, ui_font_, sel);
+    y += nav_row_h;
+  }
+
+  // ── Bottom tooltip ────────────────────────────────────────────────────────
+  buf.fill_rect(0, bot_rule_y, W, 1, false);
+  if (section_font_.valid()) {
+    const BitmapFont& sf = section_font_;
+    const bool inv = app_ && app_->invert_menu_buttons();
+    const char* labels[] = {"Back", "Select", inv ? "Up" : "Down", inv ? "Down" : "Up"};
+    static constexpr int kN = 4;
+    static constexpr int kNudge[kN] = {3, 10, -20, -5};
+    int ws[kN];
+    for (int i = 0; i < kN; ++i)
+      ws[i] = sf.word_width(labels[i], std::strlen(labels[i]), FontStyle::Regular);
+    const int slot_w_btn = W / kN;
+    const int ty = bot_rule_y + 1 + kBotPad + sf.baseline();
+    for (int i = 0; i < kN; ++i) {
+      const int cx = slot_w_btn * i + slot_w_btn / 2 - ws[i] / 2 + kNudge[i];
+      buf.draw_text_proportional(cx, ty, labels[i], sf, false);
+    }
+  }
+}
+
+}  // namespace microreader

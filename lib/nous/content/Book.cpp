@@ -1,5 +1,8 @@
 #include "Book.h"
 
+#include <cstdio>
+#include <cstring>
+
 #include "../HeapLog.h"
 
 namespace microreader {
@@ -101,6 +104,37 @@ bool Book::read_image_size(uint16_t entry_index, uint16_t& w, uint16_t& h, uint8
   h = stream.height();
   MR_LOGI("book", "read_image_size: entry %u -> %ux%u", entry_index, w, h);
   return true;
+}
+
+bool Book::write_cover_bin(const char* cover_path, uint8_t* work_buf, size_t work_buf_size) {
+  const int idx = epub_.cover_zip_idx();
+  if (idx < 0 || idx >= static_cast<int>(epub_.zip().entry_count()))
+    return false;
+  DecodedImage img;
+  // Decode to max 120×180 — small enough for the Lyra card area.
+  auto err = decode_image(static_cast<uint16_t>(idx), img, 140, 200, work_buf, work_buf_size);
+  if (err != ImageError::Ok || img.data.empty())
+    return false;
+  FILE* f = std::fopen(cover_path, "wb");
+  if (!f)
+    return false;
+  uint16_t le[2] = {img.width, img.height};
+  std::fwrite(le, 2, 2, f);
+  std::fwrite(img.data.data(), 1, img.data.size(), f);
+  std::fclose(f);
+  return true;
+}
+
+std::string cover_bin_path(const char* epub_path, const char* data_dir) {
+  // Extract stem from epub_path (filename without extension).
+  const char* p = epub_path;
+  const char* slash = nullptr;
+  for (const char* c = p; *c; ++c)
+    if (*c == '/' || *c == '\\') slash = c;
+  const char* name = slash ? slash + 1 : p;
+  const char* dot = std::strrchr(name, '.');
+  std::string stem = dot ? std::string(name, static_cast<size_t>(dot - name)) : std::string(name);
+  return std::string(data_dir) + "/cache/" + stem + "/cover.bin";
 }
 
 }  // namespace microreader

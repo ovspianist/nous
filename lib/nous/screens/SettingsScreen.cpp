@@ -102,7 +102,8 @@ static std::string get_theme_label(uint8_t theme) {
   if (theme == 0) return "Theme: Chronicle";
   if (theme == 2) return "Theme: Stele";
   if (theme == 3) return "Theme: Codex";
-  if (theme == 4) return "Theme: Lyra";
+  if (theme == 4) return "Theme: Lyra on Budget";
+  if (theme == 5) return "Theme: Lyra Extended on Budget";
   return "Theme: Minimal";
 }
 
@@ -356,23 +357,86 @@ std::string_view SettingsScreen::get_item_subtitle(int index) const {
   return subtitle_buf_;
 }
 
-static constexpr int kThemeCount = 5;
-static const char* kThemeNames[kThemeCount] = {
-  "Chronicle", "Minimal", "Stele", "Codex", "Lyra"
-};
+void SettingsScreen::open_picker_(const char* title, int target_idx, std::vector<std::string> opts, int cur_sel) {
+  picker_title_   = title;
+  picker_target_  = target_idx;
+  picker_options_ = std::move(opts);
+  picker_sel_     = cur_sel;
+  picker_open_    = true;
+  request_redraw();
+}
 
-void SettingsScreen::apply_theme_picker_(int idx) {
+void SettingsScreen::apply_picker_(int sel) {
+  picker_open_ = false;
   if (!app_) return;
-  const uint8_t old_v = app_->menu_theme();
-  const uint8_t v = static_cast<uint8_t>(idx);
-  app_->set_menu_theme(v);
-  set_item_label(idx_theme_, get_theme_label(v));
-  if (v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::Lyra))
-    app_->replace_screen(ScreenId::Lyra);
-  else if (old_v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::Lyra))
-    app_->replace_screen(ScreenId::MainMenu);
-  else
-    app_->pop_screen();  // back to main menu / book list
+
+  if (picker_target_ == idx_theme_) {
+    const uint8_t old_v = app_->menu_theme();
+    const uint8_t v = static_cast<uint8_t>(sel);
+    app_->set_menu_theme(v);
+    set_item_label(idx_theme_, get_theme_label(v));
+    if (v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::Lyra))
+      app_->replace_screen(ScreenId::Lyra);
+    else if (v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::LyraExt))
+      app_->replace_screen(ScreenId::LyraExt);
+    else if (old_v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::Lyra) ||
+             old_v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::LyraExt))
+      app_->replace_screen(ScreenId::MainMenu);
+    else
+      app_->pop_screen();
+    return;
+  }
+  if (picker_target_ == idx_menu_font_) {
+    app_->set_menu_font_size(sel);
+    restart();
+    return;
+  }
+  if (picker_target_ == idx_battery_display_) {
+    auto v = static_cast<uint8_t>(sel);
+    app_->set_battery_display(v);
+    set_item_label(idx_battery_display_, get_battery_display_label(v));
+  } else if (picker_target_ == idx_list_align_) {
+    auto v = static_cast<uint8_t>(sel);
+    app_->set_list_align(v);
+    set_item_label(idx_list_align_, get_list_align_label(v));
+  } else if (picker_target_ == idx_sleep_timeout_) {
+    static constexpr uint8_t kTimeouts[] = {0, 1, 3, 5, 10, 20, 30};
+    uint8_t v = (sel >= 0 && sel < (int)sizeof(kTimeouts)) ? kTimeouts[sel] : 0;
+    app_->set_sleep_timeout_min(v);
+    set_item_label(idx_sleep_timeout_, get_sleep_timeout_label(v));
+  } else if (picker_target_ == idx_list_format_) {
+    static const BookListFormat kFormats[] = {
+      BookListFormat::TitleOnly, BookListFormat::Filename, BookListFormat::TitleAndAuthor
+    };
+    auto fmt = (sel >= 0 && sel < 3) ? kFormats[sel] : BookListFormat::TitleOnly;
+    if (app_->main_menu()) {
+      app_->main_menu()->set_list_format(fmt);
+      set_item_label(idx_list_format_, get_list_format_label(fmt));
+    }
+    app_->save_settings_();
+  } else if (picker_target_ == idx_rotate_display_) {
+    auto v = static_cast<uint8_t>(sel);
+    app_->set_rotate_display(v);
+    set_item_label(idx_rotate_display_, get_rotate_menu_label(v));
+    if (buf_) buf_->set_rotation(rotation_from_setting(v));
+  } else if (picker_target_ == idx_reader_rotate_display_) {
+    auto v = static_cast<uint8_t>(sel);
+    app_->set_rotate_reader(v);
+    set_item_label(idx_reader_rotate_display_, get_rotate_reader_label(v));
+  } else if (picker_target_ == idx_font_) {
+    if (sel >= 0 && sel < (int)sd_fonts_.size()) {
+      font_sel_idx_ = sel;
+      app_->set_custom_font_path(sd_fonts_[sel]);
+      set_item_label(idx_font_, get_font_label(sd_fonts_[sel]));
+    }
+  } else if (picker_target_ == idx_sleep_image_) {
+    if (sel >= 0 && sel < (int)sleep_images_.size()) {
+      sleep_image_sel_idx_ = sel;
+      app_->set_sleep_image_path(sleep_images_[sel]);
+      set_item_label(idx_sleep_image_, get_sleep_image_label(sleep_images_[sel]));
+    }
+  }
+  request_redraw();
 }
 
 void SettingsScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& runtime) {
@@ -387,29 +451,25 @@ void SettingsScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntim
     }
   }
 
-  if (theme_picker_open_) {
+  if (picker_open_) {
     const bool inv = app_ && app_->invert_menu_buttons();
     const Button btn_up   = inv ? Button::Button2 : Button::Button3;
     const Button btn_down = inv ? Button::Button3 : Button::Button2;
+    const int n = static_cast<int>(picker_options_.size());
     bool redraw = false;
     Button btn;
-    ButtonState consumed;  // empty — prevents list from processing any input
     while (buttons.next_press(btn)) {
-      if (btn == btn_up) {
-        theme_picker_sel_ = (theme_picker_sel_ - 1 + kThemeCount) % kThemeCount;
+      if (btn == btn_up || btn == Button::Up) {
+        picker_sel_ = (picker_sel_ - 1 + n) % n;
         redraw = true;
       } else if (btn == btn_down || btn == Button::Down) {
-        theme_picker_sel_ = (theme_picker_sel_ + 1) % kThemeCount;
+        picker_sel_ = (picker_sel_ + 1) % n;
         redraw = true;
-      } else if (btn == Button::Up) {
-        theme_picker_sel_ = (theme_picker_sel_ - 1 + kThemeCount) % kThemeCount;
-        redraw = true;
-      } else if (btn == Button::Button1) {  // select — confirm
-        theme_picker_open_ = false;
-        apply_theme_picker_(theme_picker_sel_);
+      } else if (btn == Button::Button1) {
+        apply_picker_(picker_sel_);
         return;
-      } else if (btn == Button::Button0) {  // back — cancel
-        theme_picker_open_ = false;
+      } else if (btn == Button::Button0) {
+        picker_open_ = false;
         redraw = true;
       }
     }
@@ -417,7 +477,7 @@ void SettingsScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntim
       draw_all_(buf, runtime.battery_percentage());
       buf.refresh();
     }
-    return;  // swallow all input while picker is open
+    return;
   }
 
   ListMenuScreen::update(buttons, buf, runtime);
@@ -425,9 +485,9 @@ void SettingsScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntim
 
 void SettingsScreen::on_select(int index) {
   if (index == idx_theme_) {
-    theme_picker_sel_ = app_ ? static_cast<int>(app_->menu_theme()) : 0;
-    theme_picker_open_ = true;
-    request_redraw();
+    open_picker_("Select Theme", idx_theme_,
+      {"Chronicle", "Minimal", "Stele", "Codex", "Lyra on Budget", "Lyra Extended on Budget"},
+      app_ ? static_cast<int>(app_->menu_theme()) : 0);
     return;
   }
   if (index == idx_nav_arrows_) {
@@ -447,11 +507,9 @@ void SettingsScreen::on_select(int index) {
     return;
   }
   if (index == idx_battery_display_) {
-    if (app_) {
-      uint8_t v = static_cast<uint8_t>((app_->battery_display() + 1) % 3);
-      app_->set_battery_display(v);
-      set_item_label(idx_battery_display_, get_battery_display_label(v));
-    }
+    open_picker_("Battery Display", idx_battery_display_,
+      {"Icon", "Number", "Icon & Number"},
+      app_ ? static_cast<int>(app_->battery_display()) : 0);
     return;
   }
   if (index == idx_conv_indicator_) {
@@ -463,27 +521,22 @@ void SettingsScreen::on_select(int index) {
     return;
   }
   if (index == idx_list_align_) {
-    if (app_) {
-      uint8_t v = static_cast<uint8_t>((app_->list_align() + 1) % 3);
-      app_->set_list_align(v);
-      set_item_label(idx_list_align_, get_list_align_label(v));
-    }
+    open_picker_("List Align", idx_list_align_,
+      {"Center", "Left", "Right"},
+      app_ ? static_cast<int>(app_->list_align()) : 0);
     return;
   }
   if (index == idx_sleep_timeout_) {
+    static constexpr uint8_t kTimeouts[] = {0, 1, 3, 5, 10, 20, 30};
+    int cur_idx = 0;
     if (app_) {
-      static constexpr uint8_t kTimeouts[] = {1, 3, 5, 10, 20, 30, 0};
       uint8_t cur = app_->sleep_timeout_min();
-      uint8_t next = kTimeouts[0];
-      for (size_t i = 0; i < sizeof(kTimeouts); ++i) {
-        if (kTimeouts[i] == cur) {
-          next = kTimeouts[(i + 1) % sizeof(kTimeouts)];
-          break;
-        }
-      }
-      app_->set_sleep_timeout_min(next);
-      set_item_label(idx_sleep_timeout_, get_sleep_timeout_label(next));
+      for (int i = 0; i < (int)sizeof(kTimeouts); ++i)
+        if (kTimeouts[i] == cur) { cur_idx = i; break; }
     }
+    open_picker_("Auto Sleep", idx_sleep_timeout_,
+      {"Off", "1 min", "3 min", "5 min", "10 min", "20 min", "30 min"},
+      cur_idx);
     return;
   }
   if (index == idx_convert_all_) {
@@ -532,19 +585,14 @@ void SettingsScreen::on_select(int index) {
     return;
   }
   if (index == idx_list_format_) {
-    if (app_->main_menu()) {
+    int cur = 0;
+    if (app_ && app_->main_menu()) {
       auto fmt = app_->main_menu()->list_format();
-      if (fmt == BookListFormat::TitleAndAuthor) {
-        fmt = BookListFormat::TitleOnly;
-      } else if (fmt == BookListFormat::TitleOnly) {
-        fmt = BookListFormat::Filename;
-      } else {
-        fmt = BookListFormat::TitleAndAuthor;
-      }
-      app_->main_menu()->set_list_format(fmt);
-      set_item_label(idx_list_format_, get_list_format_label(fmt));
+      if (fmt == BookListFormat::Filename) cur = 1;
+      else if (fmt == BookListFormat::TitleAndAuthor) cur = 2;
     }
-    app_->save_settings_();
+    open_picker_("Book List Format", idx_list_format_,
+      {"Title Only", "Filename", "Title & Author"}, cur);
     return;
   }
   if (index == idx_invert_menu_) {
@@ -572,44 +620,35 @@ void SettingsScreen::on_select(int index) {
     return;
   }
   if (index == idx_rotate_display_) {
-    if (app_ && buf_) {
-      uint8_t v = static_cast<uint8_t>((app_->rotate_display() + 1) % 4);
-      app_->set_rotate_display(v);
-      set_item_label(idx_rotate_display_, get_rotate_menu_label(v));
-      buf_->set_rotation(rotation_from_setting(v));
-    }
+    open_picker_("Menu Rotation", idx_rotate_display_,
+      {"Normal", "90\xC2\xB0", "180\xC2\xB0", "270\xC2\xB0"},
+      app_ ? static_cast<int>(app_->rotate_display()) : 0);
     return;
   }
   if (index == idx_reader_rotate_display_) {
-    if (app_) {
-      uint8_t v = static_cast<uint8_t>((app_->rotate_reader() + 1) % 4);
-      app_->set_rotate_reader(v);
-      set_item_label(idx_reader_rotate_display_, get_rotate_reader_label(v));
-    }
+    open_picker_("Reader Rotation", idx_reader_rotate_display_,
+      {"Normal", "90\xC2\xB0", "180\xC2\xB0", "270\xC2\xB0"},
+      app_ ? static_cast<int>(app_->rotate_reader()) : 0);
     return;
   }
   if (index == idx_menu_font_) {
-    if (app_) {
-      int v = (app_->menu_font_size() + 1) % 4;
-      app_->set_menu_font_size(v);
-      restart();  // rebuilds items with the new font size immediately
-    }
+    open_picker_("Menu Size", idx_menu_font_,
+      {"Small", "Medium", "Large", "X-Large"},
+      app_ ? app_->menu_font_size() : 0);
     return;
   }
   if (index == idx_font_) {
-    if (app_ && !sd_fonts_.empty()) {
-      font_sel_idx_ = (font_sel_idx_ + 1) % sd_fonts_.size();
-      app_->set_custom_font_path(sd_fonts_[font_sel_idx_]);
-      set_item_label(idx_font_, get_font_label(sd_fonts_[font_sel_idx_]));
-    }
+    std::vector<std::string> font_names;
+    font_names.reserve(sd_fonts_.size());
+    for (const auto& fp : sd_fonts_) font_names.push_back(get_font_label(fp).substr(6)); // strip "Font: "
+    open_picker_("Font", idx_font_, std::move(font_names), font_sel_idx_);
     return;
   }
   if (index == idx_sleep_image_) {
-    if (app_ && !sleep_images_.empty()) {
-      sleep_image_sel_idx_ = (sleep_image_sel_idx_ + 1) % static_cast<int>(sleep_images_.size());
-      app_->set_sleep_image_path(sleep_images_[sleep_image_sel_idx_]);
-      set_item_label(idx_sleep_image_, get_sleep_image_label(sleep_images_[sleep_image_sel_idx_]));
-    }
+    std::vector<std::string> img_names;
+    img_names.reserve(sleep_images_.size());
+    for (const auto& ip : sleep_images_) img_names.push_back(get_sleep_image_label(ip).substr(13)); // strip "Sleep Image: "
+    open_picker_("Sleep Image", idx_sleep_image_, std::move(img_names), sleep_image_sel_idx_);
     return;
   }
 #ifdef ESP_PLATFORM
@@ -819,6 +858,47 @@ bool SettingsScreen::is_item_focusable(int index) const {
   return true;
 }
 
+void SettingsScreen::draw_picker_(DrawBuffer& buf) const {
+  if (!ui_font_.valid()) return;
+  const int W = buf.width();
+  const int H = buf.height();
+  const int n = static_cast<int>(picker_options_.size());
+
+  static constexpr int kPickerPadH = 20;
+  static constexpr int kRowPad     = 8;
+  static constexpr int kTitlePad   = 8;
+  const int row_h   = kRowPad + ui_font_.y_advance() + kRowPad;
+  const int title_h = kTitlePad + ui_font_.y_advance() + kTitlePad;
+  const int popup_h = 1 + title_h + 1 + n * row_h + 1;
+  const int popup_x = kPickerPadH;
+  const int popup_w = W - 2 * kPickerPadH;
+  const int popup_y = std::max(0, (H - popup_h) / 2);
+  const int text_x  = popup_x + 1 + 10;
+
+  buf.fill_rect(popup_x, popup_y, popup_w, popup_h, true);
+  buf.fill_rect(popup_x, popup_y, popup_w, 1, false);
+  buf.fill_rect(popup_x, popup_y + popup_h - 1, popup_w, 1, false);
+  buf.fill_rect(popup_x, popup_y, 1, popup_h, false);
+  buf.fill_rect(popup_x + popup_w - 1, popup_y, 1, popup_h, false);
+
+  int py = popup_y + 1;
+  buf.draw_text_proportional(text_x, py + kTitlePad + ui_font_.baseline(),
+                             picker_title_.c_str(), picker_title_.size(), ui_font_, false);
+  py += title_h;
+  buf.fill_rect(popup_x + 1, py, popup_w - 2, 1, false);
+  py += 1;
+
+  for (int i = 0; i < n; ++i) {
+    const bool sel = (i == picker_sel_);
+    if (sel)
+      buf.fill_rect(popup_x + 1, py, popup_w - 2, row_h, false);
+    buf.draw_text_proportional(text_x, py + kRowPad + ui_font_.baseline(),
+                               picker_options_[i].c_str(), picker_options_[i].size(), ui_font_, sel);
+    py += row_h;
+  }
+  buf.fill_rect(popup_x, popup_y + popup_h - 1, popup_w, 1, false);
+}
+
 void SettingsScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) const {
   const int W = buf.width();
   const int H = buf.height();
@@ -906,45 +986,9 @@ void SettingsScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_p
     y += kRowH;
   }
 
-  // ── Theme picker overlay ──────────────────────────────────────────────────
-  if (theme_picker_open_ && ui_font_.valid()) {
-    static constexpr int kPickerPadH = 20;  // horizontal inset from screen edges
-    static constexpr int kRowPad     = 8;   // vertical padding inside each row
-    static constexpr int kTitlePad   = 8;
-    const int row_h   = kRowPad + ui_font_.y_advance() + kRowPad;
-    const int title_h = kTitlePad + ui_font_.y_advance() + kTitlePad;
-    const int popup_h = 1 + title_h + 1 + kThemeCount * row_h + 1;
-    const int popup_x = kPickerPadH;
-    const int popup_w = W - 2 * kPickerPadH;
-    const int popup_y = (H - popup_h) / 2;
-
-    // Background (white fill + border)
-    buf.fill_rect(popup_x, popup_y, popup_w, popup_h, true);
-    buf.fill_rect(popup_x, popup_y, popup_w, 1, false);                       // top
-    buf.fill_rect(popup_x, popup_y + popup_h - 1, popup_w, 1, false);        // bottom
-    buf.fill_rect(popup_x, popup_y, 1, popup_h, false);                      // left
-    buf.fill_rect(popup_x + popup_w - 1, popup_y, 1, popup_h, false);        // right
-
-    // Title row
-    int py = popup_y + 1;
-    const int title_text_x = popup_x + 1 + 10;
-    buf.draw_text_proportional(title_text_x, py + kTitlePad + ui_font_.baseline(),
-                               "Select Theme", ui_font_, false);
-    py += title_h;
-    buf.fill_rect(popup_x + 1, py, popup_w - 2, 1, false);
-    py += 1;
-
-    // Theme rows
-    for (int i = 0; i < kThemeCount; ++i) {
-      const bool sel = (i == theme_picker_sel_);
-      if (sel)
-        buf.fill_rect(popup_x + 1, py, popup_w - 2, row_h, false);
-      buf.draw_text_proportional(title_text_x, py + kRowPad + ui_font_.baseline(),
-                                 kThemeNames[i], ui_font_, sel);
-      py += row_h;
-    }
-    // Bottom border line (redraw over any row highlight that hit it)
-    buf.fill_rect(popup_x, popup_y + popup_h - 1, popup_w, 1, false);
+  // ── Generic picker overlay ────────────────────────────────────────────────
+  if (picker_open_ && ui_font_.valid()) {
+    draw_picker_(buf);
   }
 }
 

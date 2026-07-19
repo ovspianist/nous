@@ -1,6 +1,9 @@
 #include "MrbConverter.h"
 
+#include <cstring>
+
 #include "../../display/DrawBuffer.h"
+#include "../Book.h"
 #include "../EpubParser.h"
 #include "../ZipReader.h"
 
@@ -331,6 +334,17 @@ bool convert_epub_to_mrb_streaming(Book& book, const char* output_path, uint8_t*
 
   bool ok = writer.finish(book.metadata(), toc_work, spine_files);
   writer.close();  // explicit close so fclose() happens before we return
+
+  // Extract cover image alongside the MRB file if the EPUB has one.
+  if (ok) {
+    std::string cover_path(output_path);
+    const size_t pos = cover_path.rfind("book.mrb");
+    if (pos != std::string::npos) {
+      cover_path.replace(pos, 8, "cover.bin");
+      book.write_cover_bin(cover_path.c_str(), work_buf,
+                           work_buf ? (ZipEntryInput::kDecompSize + ZipEntryInput::kDictSize + 1024) : 0);
+    }
+  }
 
 #ifdef ESP_PLATFORM
   long total_ms = (long)((esp_timer_get_time() - total_start) / 1000);

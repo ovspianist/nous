@@ -120,6 +120,7 @@ void MainMenu::on_select(int index) {
   int real = entries_index_for(index);
   last_selected_path_ = entries_[real].path;
   app_->record_book_opened(entries_[real].path);
+  app_->ensure_cover_bin(entries_[real].path);
   app_->reader()->set_path(entries_[real].path.c_str());
   app_->push_screen(ScreenId::Reader);
 }
@@ -137,7 +138,8 @@ void MainMenu::stop() {
 }
 
 void MainMenu::on_back() {
-  if (ListMenuScreen::theme() == ListMenuScreen::MenuTheme::Lyra)
+  const auto t = ListMenuScreen::theme();
+  if (t == ListMenuScreen::MenuTheme::Lyra || t == ListMenuScreen::MenuTheme::LyraExt)
     app_->pop_screen();
   else
     app_->push_screen(ScreenId::Settings);
@@ -188,7 +190,7 @@ std::string_view MainMenu::get_item_label(int index) const {
   const BookEntry& e = entries_[real];
   const bool star = e.mrb_exists;
   const auto t = ListMenuScreen::theme();
-  const bool chronicle = (t == ListMenuScreen::MenuTheme::Chronicle);
+  const bool chronicle = (t == ListMenuScreen::MenuTheme::Chronicle || force_chronicle_list_);
   const bool stele     = (t == ListMenuScreen::MenuTheme::Stele);
 
   auto title_sv  = e.title_ref.view(pool);
@@ -278,6 +280,9 @@ void MainMenu::populate_list_() {
 
   const StringPool& bpool = BookIndex::instance().pool();
   const bool is_stele = (ListMenuScreen::theme() == ListMenuScreen::MenuTheme::Stele);
+  const bool is_lyra  = (ListMenuScreen::theme() == ListMenuScreen::MenuTheme::Lyra ||
+                          ListMenuScreen::theme() == ListMenuScreen::MenuTheme::LyraExt);
+  force_chronicle_list_ = is_lyra;
   const bool check_mrb = app_ && app_->data_dir_ &&
       (app_->show_converted_indicator() || is_stele);
   for (const auto& idx : BookIndex::instance().entries()) {
@@ -300,7 +305,7 @@ void MainMenu::populate_list_() {
     entries_.push_back(std::move(e));
   }
 
-  if (sort_order_ == BookSortOrder::LastOpened) {
+  if (sort_order_ == BookSortOrder::LastOpened && !is_lyra) {
     const auto fmt = list_format_;
     std::stable_sort(entries_.begin(), entries_.end(),
                      [&bpool, fmt](const BookEntry& a, const BookEntry& b) {

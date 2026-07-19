@@ -1,10 +1,12 @@
 #include "Application.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 
 #include "HeapLog.h"
+#include "content/Book.h"
 #include "content/BookIndex.h"
 #include "content/BmpSleepConverter.h"
 #include "content/ImageDecoder.h"
@@ -42,6 +44,7 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
     reader_.set_fonts(reader_font_);
 
   lyra_.set_app(this);
+  lyra_ext_.set_app(this);
   recent_books_.set_app(this);
   menu_.set_app(this);
   reader_.set_app(this);
@@ -78,6 +81,8 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
 
   if (menu_theme_ == static_cast<uint8_t>(ListMenuScreen::MenuTheme::Lyra))
     screen_mgr_.push(&lyra_, buf, runtime);
+  else if (menu_theme_ == static_cast<uint8_t>(ListMenuScreen::MenuTheme::LyraExt))
+    screen_mgr_.push(&lyra_ext_, buf, runtime);
   else
     screen_mgr_.push(&menu_, buf, runtime);
 
@@ -313,6 +318,8 @@ IScreen* microreader::Application::screen_for_(ScreenId id) {
       return &hidden_books_;
     case ScreenId::Lyra:
       return &lyra_;
+    case ScreenId::LyraExt:
+      return &lyra_ext_;
     case ScreenId::RecentBooks:
       return &recent_books_;
 
@@ -404,7 +411,7 @@ void microreader::Application::save_settings_() {
 }
 
 void microreader::Application::set_menu_theme(uint8_t v) {
-  menu_theme_ = v % 5u;
+  menu_theme_ = v % 6u;
   ListMenuScreen::set_theme(static_cast<ListMenuScreen::MenuTheme>(menu_theme_));
   save_settings_();
 }
@@ -429,6 +436,16 @@ void microreader::Application::record_book_opened(const std::string& path) {
   }
   save_settings_();
 }
+void Application::ensure_cover_bin(const std::string& epub_path) {
+  if (!data_dir_) return;
+  const std::string cpath = cover_bin_path(epub_path.c_str(), data_dir_);
+  FILE* chk = std::fopen(cpath.c_str(), "rb");
+  if (chk) { std::fclose(chk); return; }  // already exists
+  Book book;
+  if (book.open(epub_path.c_str()) != EpubError::Ok) return;
+  book.write_cover_bin(cpath.c_str());
+}
+
 void microreader::Application::load_settings_() {
   if (settings_path_.empty())
     return;

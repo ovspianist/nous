@@ -79,6 +79,7 @@ void HiddenBooksMenu::scan_() {
 }
 
 void HiddenBooksMenu::on_start() {
+  force_chronicle_list_ = true;
   title_ = "Hidden";
   paths_.clear();
   scan_();
@@ -103,6 +104,7 @@ void HiddenBooksMenu::on_start() {
 void HiddenBooksMenu::on_select(int index) {
   if (paths_.empty() || index < 0 || index >= static_cast<int>(paths_.size()))
     return;
+  app_->ensure_cover_bin(paths_[index]);
   app_->reader()->set_path(paths_[index]);
   app_->push_screen(ScreenId::Reader);
 }
