@@ -10,6 +10,38 @@
 
 namespace microreader {
 
+// Cover mode blit: scale src to fill dst_w × dst_h, centered, crop overflow.
+static void blit_cover(DrawBuffer& buf, int dst_x, int dst_y,
+                        const uint8_t* data, int src_w, int src_h,
+                        int dst_w, int dst_h) {
+  if (dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) return;
+  const int src_stride = (src_w + 7) / 8;
+  const int dst_stride = (dst_w + 7) / 8;
+  uint8_t row_buf[80];
+  if (dst_stride > (int)sizeof(row_buf)) return;
+  const bool wd = (dst_w * src_h >= dst_h * src_w);
+  const int crop_y = wd ? ((src_h * dst_w / src_w) - dst_h) / 2 : 0;
+  const int crop_x = wd ? 0 : ((src_w * dst_h / src_h) - dst_w) / 2;
+  for (int dy = 0; dy < dst_h; ++dy) {
+    const int sy = wd
+        ? std::min((dy + crop_y) * src_w / dst_w, src_h - 1)
+        : std::min(dy * src_h / dst_h, src_h - 1);
+    const uint8_t* src_row = data + sy * src_stride;
+    std::memset(row_buf, 0xFF, static_cast<size_t>(dst_stride));
+    for (int dx = 0; dx < dst_w; ++dx) {
+      const int sx = wd
+          ? std::min(dx * src_w / dst_w, src_w - 1)
+          : std::min((dx + crop_x) * src_h / dst_h, src_w - 1);
+      const int bit = (src_row[sx >> 3] >> (7 - (sx & 7))) & 1;
+      if (bit == 0)
+        row_buf[dx >> 3] &= static_cast<uint8_t>(~(1u << (7 - (dx & 7))));
+    }
+    buf.blit_1bit_row(dst_x, dst_y + dy, row_buf, dst_w);
+  }
+}
+
+
+
 void LyraScreen::on_start() {
   if (app_ && app_->data_dir_) {
     const std::string idx_path = std::string(app_->data_dir_) + "/book_index.dat";
@@ -102,7 +134,6 @@ void LyraScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime& r
   // Lazy cover extraction: show loading bar, extract, then redraw.
   if (cover_needs_extract_) {
     cover_needs_extract_ = false;
-    buf.show_loading("Loading cover...", 0);
     if (app_) app_->ensure_cover_bin(recent_path_);
     load_cover_data_();
     request_redraw();
@@ -229,13 +260,15 @@ void LyraScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) 
     if (sel)
       buf.fill_rect(0, y, W, card_h, false);
 
-    // Cover on the LEFT.
+    // Cover on the LEFT — cover mode fills the card's cover slot.
     if (cover_loaded_ && cover_w_ > 0 && cover_h_ > 0) {
-      const int img_x    = kPad;
-      const int img_y    = y + (card_h - static_cast<int>(cover_h_)) / 2;
-      const size_t stride = (cover_w_ + 7) / 8;
-      for (int row = 0; row < static_cast<int>(cover_h_); ++row)
-        buf.blit_1bit_row(img_x, img_y + row, cover_data_.data() + row * stride, cover_w_);
+      const int slot_h = card_h - kCardPadV * 2;
+      const int slot_w_actual = static_cast<int>(cover_w_);
+      const int img_x = kPad;
+      const int img_y = y + kCardPadV;
+      blit_cover(buf, img_x, img_y,
+                 cover_data_.data(), cover_w_, cover_h_,
+                 slot_w_actual, slot_h);
     }
 
     // Text group: vertically centered in card.

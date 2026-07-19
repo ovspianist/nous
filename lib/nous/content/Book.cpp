@@ -111,8 +111,14 @@ bool Book::write_cover_bin(const char* cover_path, uint8_t* work_buf, size_t wor
   if (idx < 0 || idx >= static_cast<int>(epub_.zip().entry_count()))
     return false;
   DecodedImage img;
-  // Decode to max 120×180 — small enough for the Lyra card area.
-  auto err = decode_image(static_cast<uint16_t>(idx), img, 140, 200, work_buf, work_buf_size);
+  // Decode to fit within 160×240, preserving aspect ratio.
+  // Force images_enabled=true so covers are always generated regardless of
+  // the "show reader images" setting.
+  auto& entry = epub_.zip().entry(static_cast<uint16_t>(idx));
+  const bool was_enabled = images_enabled;
+  images_enabled = true;
+  auto err = decode_image_from_entry(file_, entry, 160, 240, img, work_buf, work_buf_size, /*scale_to_fill=*/false);
+  images_enabled = was_enabled;
   if (err != ImageError::Ok || img.data.empty())
     return false;
   FILE* f = std::fopen(cover_path, "wb");

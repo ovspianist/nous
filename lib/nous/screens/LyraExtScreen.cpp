@@ -10,23 +10,47 @@
 
 namespace microreader {
 
-// Nearest-neighbour downscale of a 1-bit MSB-first bitmap into the draw buffer.
-static void blit_scaled_cover(DrawBuffer& buf, int dst_x, int dst_y,
-                               const uint8_t* data, int src_w, int src_h,
-                               int dst_w, int dst_h) {
+// Cover mode: scale src so it fills dst_w × dst_h, centered, crop overflow.
+// Maintains aspect ratio — one dimension fills exactly, the other is cropped.
+// Example: src 300×400, dst 200×100 → scale by width (200/300), rendering
+// 200×267 then cropping to the center 100 rows.
+static void blit_cover(DrawBuffer& buf, int dst_x, int dst_y,
+                        const uint8_t* data, int src_w, int src_h,
+                        int dst_w, int dst_h) {
   if (dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) return;
   const int src_stride = (src_w + 7) / 8;
   const int dst_stride = (dst_w + 7) / 8;
   uint8_t row_buf[80];  // supports up to 640px output columns
   if (dst_stride > (int)sizeof(row_buf)) return;
+
+  // Determine dominant axis: if scaling by width already fills height → width-dominant.
+  // width-dominant: dst_w * src_h >= dst_h * src_w
+  const bool wd = (dst_w * src_h >= dst_h * src_w);
+
+  // Pre-compute the crop offset in the SCALED space.
+  // width-dominant: scale_factor = dst_w / src_w
+  //   scaled_h = src_h * dst_w / src_w
+  //   crop_y = (scaled_h - dst_h) / 2  (in scaled pixels, maps to src via ×src_w/dst_w)
+  // height-dominant: scale_factor = dst_h / src_h
+  //   scaled_w = src_w * dst_h / src_h
+  //   crop_x = (scaled_w - dst_w) / 2
+  const int crop_y = wd ? ((src_h * dst_w / src_w) - dst_h) / 2 : 0;
+  const int crop_x = wd ? 0 : ((src_w * dst_h / src_h) - dst_w) / 2;
+
   for (int dy = 0; dy < dst_h; ++dy) {
-    const int sy = dy * src_h / dst_h;
+    // Source row index using nearest-neighbour.
+    const int sy = wd
+        ? std::min((dy + crop_y) * src_w / dst_w, src_h - 1)
+        : std::min(dy * src_h / dst_h, src_h - 1);
     const uint8_t* src_row = data + sy * src_stride;
+
     std::memset(row_buf, 0xFF, static_cast<size_t>(dst_stride));
     for (int dx = 0; dx < dst_w; ++dx) {
-      const int sx = dx * src_w / dst_w;
-      const int src_bit = (src_row[sx >> 3] >> (7 - (sx & 7))) & 1;
-      if (src_bit == 0)
+      const int sx = wd
+          ? std::min(dx * src_w / dst_w, src_w - 1)
+          : std::min((dx + crop_x) * src_h / dst_h, src_w - 1);
+      const int bit = (src_row[sx >> 3] >> (7 - (sx & 7))) & 1;
+      if (bit == 0)
         row_buf[dx >> 3] &= static_cast<uint8_t>(~(1u << (7 - (dx & 7))));
     }
     buf.blit_1bit_row(dst_x, dst_y + dy, row_buf, dst_w);
@@ -139,7 +163,6 @@ void LyraExtScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime
   for (int i = 0; i < num_books_; ++i) {
     if (slots_[i].cover_needs_extract) {
       slots_[i].cover_needs_extract = false;
-      buf.show_loading("Loading cover...", 0);
       if (app_) app_->ensure_cover_bin(slots_[i].path);
       load_cover_(i);
       request_redraw();
@@ -175,12 +198,13 @@ void LyraExtScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pc
   const int H = buf.height();
   buf.fill(true);
 
+  // All spacing constants match LyraScreen exactly.
   static constexpr int kPad         = 12;
-  static constexpr int kTopGap      = 10;
-  static constexpr int kSlotGap     = 8;
-  static constexpr int kCoverTitleGap = 3;
-  static constexpr int kCardNavGap  = 12;
-  static constexpr int kNavPadV     = 10;
+  static constexpr int kTopGap      = 36;
+  static constexpr int kSlotGap     = 8;    // gap between the 3 cover slots
+  static constexpr int kCoverTitleGap = 4;
+  static constexpr int kCardNavGap  = 24;
+  static constexpr int kNavPadV     = 32;
   static constexpr int kBotPad      = 5;
   static constexpr int kBotMargin   = 10;
 
@@ -211,11 +235,10 @@ void LyraExtScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pc
   const int bot_rule_y = H - bot_area_h;
 
   // ── 3 cover slots ────────────────────────────────────────────────────────
-  const int total_gap    = 2 * kSlotGap;
-  const int slot_w       = (W - 2 * kPad - total_gap) / 3;
-  const int cover_render_h = slot_w * 13 / 10;  // ~1.3 portrait ratio
-  const int title_area_h   = ui_adv;
-  const int slot_total_h   = cover_render_h + kCoverTitleGap + title_area_h;
+  const int slot_w        = (W - 2 * kPad - 2 * kSlotGap) / 3;
+  const int cover_slot_h  = slot_w * 3 / 2;  // max slot height (3:2 portrait box)
+  const int title_area_h  = ui_adv;
+  const int slot_total_h  = cover_slot_h + kCoverTitleGap + title_area_h;
 
   static const char kEll[] = "...";
 
@@ -229,16 +252,17 @@ void LyraExtScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pc
     if (i < num_books_) {
       const auto& s = slots_[i];
       if (s.cover_loaded && s.cover_w > 0 && s.cover_h > 0) {
-        blit_scaled_cover(buf, slot_x, y,
-                          s.cover_data.data(), s.cover_w, s.cover_h,
-                          slot_w, cover_render_h);
+        // Cover mode: fill slot_w × cover_slot_h, centered, crop overflow edges.
+        blit_cover(buf, slot_x, y,
+                   s.cover_data.data(), s.cover_w, s.cover_h,
+                   slot_w, cover_slot_h);
       } else {
         // Placeholder outline
-        draw_outline(buf, slot_x, y, slot_w, cover_render_h);
+        draw_outline(buf, slot_x, y, slot_w, cover_slot_h);
       }
 
       // Truncated title below cover
-      const int title_y = y + cover_render_h + kCoverTitleGap + ui_font_.baseline();
+      const int title_y = y + cover_slot_h + kCoverTitleGap + ui_font_.baseline();
       const std::string_view title_sv = s.title;
       const int max_tw = slot_w;
       int tw = ui_font_.word_width(title_sv.data(), title_sv.size(), FontStyle::Regular);
@@ -265,7 +289,7 @@ void LyraExtScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pc
       }
     } else {
       // Empty slot outline
-      draw_outline(buf, slot_x, y, slot_w, cover_render_h);
+      draw_outline(buf, slot_x, y, slot_w, cover_slot_h);
     }
   }
 

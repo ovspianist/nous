@@ -441,6 +441,16 @@ void Application::ensure_cover_bin(const std::string& epub_path) {
   const std::string cpath = cover_bin_path(epub_path.c_str(), data_dir_);
   FILE* chk = std::fopen(cpath.c_str(), "rb");
   if (chk) { std::fclose(chk); return; }  // already exists
+  // Create data_dir/cache/ and data_dir/cache/STEM/ before writing.
+  const std::string cache_base = std::string(data_dir_) + "/cache";
+  const size_t last_slash = cpath.rfind('/');
+  const std::string stem_dir = (last_slash != std::string::npos) ? cpath.substr(0, last_slash) : cache_base;
+#ifdef ESP_PLATFORM
+  mkdir(cache_base.c_str(), 0775);
+  mkdir(stem_dir.c_str(), 0775);
+#else
+  try { fs::create_directories(stem_dir); } catch (...) {}
+#endif
   Book book;
   if (book.open(epub_path.c_str()) != EpubError::Ok) return;
   book.write_cover_bin(cpath.c_str());
@@ -537,7 +547,7 @@ void microreader::Application::load_settings_() {
     else if (std::sscanf(line, "sleep_timeout_min=%u", &uval) == 1)
       sleep_timeout_min_ = static_cast<uint8_t>(uval <= 60 ? uval : 10);
     else if (std::sscanf(line, "menu_theme=%u", &uval) == 1)
-      menu_theme_ = static_cast<uint8_t>(uval <= 4 ? uval : 0);
+      menu_theme_ = static_cast<uint8_t>(uval <= 5 ? uval : 0);
   }
   std::fclose(f);
 
