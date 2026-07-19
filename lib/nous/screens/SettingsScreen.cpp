@@ -50,8 +50,12 @@ static std::string get_list_format_label(BookListFormat fmt) {
   return "Book List: Title & Author";
 }
 
-static std::string get_rotate_display_label(bool rotated) {
-  return std::string("Display: ") + (rotated ? "Landscape" : "Portrait");
+static std::string get_rotate_menu_label(uint8_t v) {
+  return std::string("Menu: ") + rotation_label(v);
+}
+
+static std::string get_rotate_reader_label(uint8_t v) {
+  return std::string("Reader: ") + rotation_label(v);
 }
 
 static std::string get_menu_font_label(int size) {
@@ -80,12 +84,12 @@ static std::string get_nav_arrows_label(bool shown) {
   return std::string("Nav Arrows: ") + (shown ? "Show" : "Hide");
 }
 
-static std::string get_conv_indicator_label(bool shown) {
-  return std::string("Converted Mark: ") + (shown ? "On" : "Off");
+static std::string get_reader_images_label(bool enabled) {
+  return std::string("Book Images: ") + (enabled ? "On" : "Off");
 }
 
-static std::string get_render_images_label(bool on) {
-  return std::string("Images: ") + (on ? "On" : "Off");
+static std::string get_conv_indicator_label(bool shown) {
+  return std::string("Converted Mark: ") + (shown ? "On" : "Off");
 }
 
 static std::string get_battery_display_label(uint8_t mode) {
@@ -219,7 +223,10 @@ void SettingsScreen::on_start() {
   // --- Appearance ---
   add_separator("APPEARANCE");
   idx_rotate_display_ = count();
-  add_item(get_rotate_display_label(app_ && app_->rotate_display()));
+  add_item(get_rotate_menu_label(app_ ? app_->rotate_display() : 0));
+
+  idx_reader_rotate_display_ = count();
+  add_item(get_rotate_reader_label(app_ ? app_->rotate_reader() : 0));
 
   idx_theme_ = count();
   add_item(get_theme_label(app_ ? app_->menu_theme() : 0));
@@ -246,14 +253,14 @@ void SettingsScreen::on_start() {
   idx_nav_arrows_ = count();
   add_item(get_nav_arrows_label(app_ ? app_->show_nav_arrows() : true));
 
+  idx_reader_images_ = count();
+  add_item(get_reader_images_label(app_ ? app_->show_reader_images() : true));
+
   idx_battery_display_ = count();
   add_item(get_battery_display_label(app_ ? app_->battery_display() : 0));
 
   idx_conv_indicator_ = count();
   add_item(get_conv_indicator_label(app_ ? app_->show_converted_indicator() : false));
-
-  idx_render_images_ = count();
-  add_item(get_render_images_label(app_ ? app_->render_images() : true));
 
   idx_list_align_ = count();
   add_item(get_list_align_label(app_ ? app_->list_align() : 0));
@@ -325,6 +332,21 @@ void SettingsScreen::on_start() {
   add_item("Convert All Books");
 }
 
+int SettingsScreen::get_visible_count_(int H, int scroll_off) const {
+  const int list_top = 16 + (header_font_.valid() ? header_font_.y_advance() : ui_font_.y_advance()) + 7;
+  const int available_h = H - list_top;
+  int h = 0, cnt = 0, n = count();
+  for (int i = scroll_off; i < n; ++i) {
+    const int item_h = is_separator(i)
+        ? (8 + (!get_item_label(i).empty() && section_font_.valid() ? section_font_.y_advance() : 0) + 4)
+        : kRowH;
+    if (h + item_h > available_h) break;
+    h += item_h;
+    cnt++;
+  }
+  return cnt;
+}
+
 std::string_view SettingsScreen::get_item_subtitle(int index) const {
   std::string_view label = ListMenuScreen::get_item_label(index);
   const auto pos = label.find(": ");
@@ -350,6 +372,14 @@ void SettingsScreen::on_select(int index) {
     }
     return;
   }
+  if (index == idx_reader_images_) {
+    if (app_) {
+      bool v = !app_->show_reader_images();
+      app_->set_show_reader_images(v);
+      set_item_label(idx_reader_images_, get_reader_images_label(v));
+    }
+    return;
+  }
   if (index == idx_battery_display_) {
     if (app_) {
       uint8_t v = static_cast<uint8_t>((app_->battery_display() + 1) % 3);
@@ -363,14 +393,6 @@ void SettingsScreen::on_select(int index) {
       bool v = !app_->show_converted_indicator();
       app_->set_show_converted_indicator(v);
       set_item_label(idx_conv_indicator_, get_conv_indicator_label(v));
-    }
-    return;
-  }
-  if (index == idx_render_images_) {
-    if (app_) {
-      bool v = !app_->render_images();
-      app_->set_render_images(v);
-      set_item_label(idx_render_images_, get_render_images_label(v));
     }
     return;
   }
@@ -485,10 +507,18 @@ void SettingsScreen::on_select(int index) {
   }
   if (index == idx_rotate_display_) {
     if (app_ && buf_) {
-      bool v = !app_->rotate_display();
+      uint8_t v = static_cast<uint8_t>((app_->rotate_display() + 1) % 4);
       app_->set_rotate_display(v);
-      set_item_label(idx_rotate_display_, get_rotate_display_label(v));
-      buf_->set_rotation(v ? Rotation::Deg0 : Rotation::Deg90);
+      set_item_label(idx_rotate_display_, get_rotate_menu_label(v));
+      buf_->set_rotation(rotation_from_setting(v));
+    }
+    return;
+  }
+  if (index == idx_reader_rotate_display_) {
+    if (app_) {
+      uint8_t v = static_cast<uint8_t>((app_->rotate_reader() + 1) % 4);
+      app_->set_rotate_reader(v);
+      set_item_label(idx_reader_rotate_display_, get_rotate_reader_label(v));
     }
     return;
   }

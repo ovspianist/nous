@@ -16,7 +16,7 @@
 
 namespace microreader {
 
-enum class Rotation { Deg0 = 0, Deg90 = 90 };
+enum class Rotation { Deg0 = 0, Deg90 = 90, Deg180 = 180, Deg270 = 270 };
 
 // Refresh mode for full-screen updates.
 enum class RefreshMode { Full, Half };
@@ -149,10 +149,10 @@ class DrawBuffer {
 
   // Runtime logical dimensions (depend on rotation).
   int width() const {
-    return rotation_ == Rotation::Deg0 ? DisplayFrame::kPhysicalWidth : kWidth;
+    return (rotation_ == Rotation::Deg0 || rotation_ == Rotation::Deg180) ? DisplayFrame::kPhysicalWidth : kWidth;
   }
   int height() const {
-    return rotation_ == Rotation::Deg0 ? DisplayFrame::kPhysicalHeight : kHeight;
+    return (rotation_ == Rotation::Deg0 || rotation_ == Rotation::Deg180) ? DisplayFrame::kPhysicalHeight : kHeight;
   }
 
   Rotation rotation() const {
@@ -171,8 +171,12 @@ class DrawBuffer {
   void fill_rect(int lx, int ly, int lw, int lh, bool white) {
     if (rotation_ == Rotation::Deg0)
       fill_rect_physical_(full_target_(), lx, ly, lw, lh, white);
-    else
+    else if (rotation_ == Rotation::Deg90)
       fill_rect_physical_(full_target_(), ly, DisplayFrame::kPhysicalHeight - lx - lw, lh, lw, white);
+    else if (rotation_ == Rotation::Deg180)
+      fill_rect_physical_(full_target_(), DisplayFrame::kPhysicalWidth - lx - lw, DisplayFrame::kPhysicalHeight - ly - lh, lw, lh, white);
+    else  // Deg270
+      fill_rect_physical_(full_target_(), DisplayFrame::kPhysicalWidth - ly - lh, lx, lh, lw, white);
   }
 
   // Fill a logical horizontal span [x1, x2) on logical row ly.
@@ -183,14 +187,26 @@ class DrawBuffer {
       if (x1 >= x2 || ly < 0 || ly >= DisplayFrame::kPhysicalHeight)
         return;
       fill_row_physical_(full_target_(), ly, x1, x2, white);
-    } else {
+    } else if (rotation_ == Rotation::Deg90) {
       x1 = std::max(x1, 0);
       x2 = std::min(x2, kWidth);
       if (x1 >= x2 || ly < 0 || ly >= kHeight)
         return;
-      // Deg90: logical row ly -> physical col ly; logical cols [x1,x2) -> physical rows [PhysH-x2, PhysH-x1)
       fill_col_physical_(full_target_(), ly, DisplayFrame::kPhysicalHeight - x2, DisplayFrame::kPhysicalHeight - x1,
                          white);
+    } else if (rotation_ == Rotation::Deg180) {
+      x1 = std::max(x1, 0);
+      x2 = std::min(x2, DisplayFrame::kPhysicalWidth);
+      if (x1 >= x2 || ly < 0 || ly >= DisplayFrame::kPhysicalHeight)
+        return;
+      fill_row_physical_(full_target_(), DisplayFrame::kPhysicalHeight - 1 - ly,
+                         DisplayFrame::kPhysicalWidth - x2, DisplayFrame::kPhysicalWidth - x1, white);
+    } else {  // Deg270
+      x1 = std::max(x1, 0);
+      x2 = std::min(x2, kWidth);
+      if (x1 >= x2 || ly < 0 || ly >= kHeight)
+        return;
+      fill_col_physical_(full_target_(), DisplayFrame::kPhysicalWidth - 1 - ly, x1, x2, white);
     }
   }
 
@@ -255,11 +271,21 @@ class DrawBuffer {
         return;
       px = lx;
       py = ly;
-    } else {
+    } else if (rotation_ == Rotation::Deg90) {
       if (lx < 0 || lx >= kWidth || ly < 0 || ly >= kHeight)
         return;
       px = ly;
       py = DisplayFrame::kPhysicalHeight - 1 - lx;
+    } else if (rotation_ == Rotation::Deg180) {
+      if (lx < 0 || lx >= DisplayFrame::kPhysicalWidth || ly < 0 || ly >= DisplayFrame::kPhysicalHeight)
+        return;
+      px = DisplayFrame::kPhysicalWidth - 1 - lx;
+      py = DisplayFrame::kPhysicalHeight - 1 - ly;
+    } else {  // Deg270
+      if (lx < 0 || lx >= kWidth || ly < 0 || ly >= kHeight)
+        return;
+      px = DisplayFrame::kPhysicalWidth - 1 - ly;
+      py = lx;
     }
     uint8_t* buf = inactive_();
     const int px_buf = px + DisplayFrame::kPanelOffsetX;
@@ -295,7 +321,7 @@ class DrawBuffer {
         else
           buf[bidx] &= clr_mask;
       }
-    } else {
+    } else if (rotation_ == Rotation::Deg90) {
       if (ly < 0 || ly >= kHeight || width <= 0)
         return;
       const int px = ly;
@@ -303,7 +329,6 @@ class DrawBuffer {
       const int byte_col = px_buf / 8;
       const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px_buf & 7));
       const uint8_t clr_mask = static_cast<uint8_t>(~set_mask);
-      // Clip x range to [0, kWidth)
       int col_start = 0, col_end = width;
       if (lx < 0)
         col_start = -lx;
@@ -311,6 +336,49 @@ class DrawBuffer {
         col_end = kWidth - lx;
       for (int col = col_start; col < col_end; ++col) {
         const int py = DisplayFrame::kPhysicalHeight - 1 - (lx + col);
+        const size_t bidx = static_cast<size_t>(py) * DisplayFrame::kStride + byte_col;
+        const bool white = (data_1bit[col >> 3] >> (7 - (col & 7))) & 1;
+        if (white)
+          buf[bidx] |= set_mask;
+        else
+          buf[bidx] &= clr_mask;
+      }
+    } else if (rotation_ == Rotation::Deg180) {
+      if (ly < 0 || ly >= DisplayFrame::kPhysicalHeight || width <= 0)
+        return;
+      const int py = DisplayFrame::kPhysicalHeight - 1 - ly;
+      int col_start = 0, col_end = width;
+      if (lx < 0)
+        col_start = -lx;
+      if (lx + width > DisplayFrame::kPhysicalWidth)
+        col_end = DisplayFrame::kPhysicalWidth - lx;
+      for (int col = col_start; col < col_end; ++col) {
+        const int px = DisplayFrame::kPhysicalWidth - 1 - (lx + col);
+        const int px_buf = px + DisplayFrame::kPanelOffsetX;
+        const size_t bidx = static_cast<size_t>(py) * DisplayFrame::kStride + px_buf / 8;
+        const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px_buf & 7));
+        const uint8_t clr_mask = static_cast<uint8_t>(~set_mask);
+        const bool white = (data_1bit[col >> 3] >> (7 - (col & 7))) & 1;
+        if (white)
+          buf[bidx] |= set_mask;
+        else
+          buf[bidx] &= clr_mask;
+      }
+    } else {  // Deg270
+      if (ly < 0 || ly >= kHeight || width <= 0)
+        return;
+      const int px = DisplayFrame::kPhysicalWidth - 1 - ly;
+      const int px_buf = px + DisplayFrame::kPanelOffsetX;
+      const int byte_col = px_buf / 8;
+      const uint8_t set_mask = static_cast<uint8_t>(0x80u >> (px_buf & 7));
+      const uint8_t clr_mask = static_cast<uint8_t>(~set_mask);
+      int col_start = 0, col_end = width;
+      if (lx < 0)
+        col_start = -lx;
+      if (lx + width > kWidth)
+        col_end = kWidth - lx;
+      for (int col = col_start; col < col_end; ++col) {
+        const int py = lx + col;
         const size_t bidx = static_cast<size_t>(py) * DisplayFrame::kStride + byte_col;
         const bool white = (data_1bit[col >> 3] >> (7 - (col & 7))) & 1;
         if (white)
@@ -587,7 +655,7 @@ class DrawBuffer {
     if (display_.is_busy())
       return;  // skip if panel is still refreshing
     uint8_t new_buf[kLoadBufBytes];
-    render_loading_box_(new_buf, text, progress_pct);
+    render_loading_box_(new_buf, text, progress_pct, rotation_);
     display_.partial_refresh_region(kLoadPhysX + DisplayFrame::kPanelOffsetX, kLoadPhysY, kLoadPhysW, kLoadPhysH,
                                     new_buf, kLoadStride);
   }
@@ -704,7 +772,7 @@ class DrawBuffer {
           }
         }
       }
-    } else {
+    } else if (rotation == Rotation::Deg0) {
       // Deg0 (landscape) — general path.
       for (int row = 0; row < bitmap_height; ++row) {
         const int ly = gy + row;
@@ -715,6 +783,58 @@ class DrawBuffer {
           if (invert_select ? bit_set : !bit_set) {
             const int px = lx;
             const int py = ly;
+            if (px < t.phys_x0 || px >= t.phys_x0 + t.phys_w)
+              continue;
+            if (py < t.phys_y0 || py >= t.phys_y0 + t.phys_h)
+              continue;
+            const int lpx = px - t.buf_x0;
+            const int lpy = py - t.phys_y0;
+            const size_t bidx = static_cast<size_t>(lpy * t.stride + lpx / 8);
+            const uint8_t bit = static_cast<uint8_t>(0x80u >> (lpx & 7));
+            if (white)
+              t.buf[bidx] |= bit;
+            else
+              t.buf[bidx] &= static_cast<uint8_t>(~bit);
+          }
+        }
+      }
+    } else if (rotation == Rotation::Deg180) {
+      // Deg180: px = PhysW-1-lx, py = PhysH-1-ly
+      for (int row = 0; row < bitmap_height; ++row) {
+        const int ly = gy + row;
+        const uint8_t* row_data = bits + row * row_stride;
+        for (int col = 0; col < bitmap_width; ++col) {
+          const int lx = gx + col;
+          const bool bit_set = (row_data[col >> 3] >> (7 - (col & 7))) & 1;
+          if (invert_select ? bit_set : !bit_set) {
+            const int px = DisplayFrame::kPhysicalWidth - 1 - lx;
+            const int py = DisplayFrame::kPhysicalHeight - 1 - ly;
+            if (px < t.phys_x0 || px >= t.phys_x0 + t.phys_w)
+              continue;
+            if (py < t.phys_y0 || py >= t.phys_y0 + t.phys_h)
+              continue;
+            const int lpx = px - t.buf_x0;
+            const int lpy = py - t.phys_y0;
+            const size_t bidx = static_cast<size_t>(lpy * t.stride + lpx / 8);
+            const uint8_t bit = static_cast<uint8_t>(0x80u >> (lpx & 7));
+            if (white)
+              t.buf[bidx] |= bit;
+            else
+              t.buf[bidx] &= static_cast<uint8_t>(~bit);
+          }
+        }
+      }
+    } else {
+      // Deg270: px = PhysW-1-ly, py = lx
+      for (int row = 0; row < bitmap_height; ++row) {
+        const int ly = gy + row;
+        const uint8_t* row_data = bits + row * row_stride;
+        for (int col = 0; col < bitmap_width; ++col) {
+          const int lx = gx + col;
+          const bool bit_set = (row_data[col >> 3] >> (7 - (col & 7))) & 1;
+          if (invert_select ? bit_set : !bit_set) {
+            const int px = DisplayFrame::kPhysicalWidth - 1 - ly;
+            const int py = lx;
             if (px < t.phys_x0 || px >= t.phys_x0 + t.phys_w)
               continue;
             if (py < t.phys_y0 || py >= t.phys_y0 + t.phys_h)
@@ -922,40 +1042,63 @@ class DrawBuffer {
 
   // Render the loading box into a mini-buffer via the unified helpers.
   // Never reads or writes bufs_.
-  static void render_loading_box_(uint8_t* mini, const char* text, int progress_pct) {
+  // rot: current display rotation. Portrait modes (Deg90/Deg270) orient content
+  // correctly; landscape modes (Deg0/Deg180) fall back to Deg90 portrait content
+  // since the fixed physical mini-buffer region is only 32px wide in landscape space.
+  static void render_loading_box_(uint8_t* mini, const char* text, int progress_pct,
+                                  Rotation rot = Rotation::Deg90) {
     const RenderTarget t = mini_target_(mini);
     memset(mini, 0xFF, kLoadBufBytes);  // white fill
 
-    // Helper: fill a logical rect in black.
-    // Deg90: fill_rect_physical_(t, phys_x=ly, phys_y=PhysH-lx-lw, phys_w=lh, phys_h=lw)
+    // In Deg270 (portrait flipped) the mini-buffer appears near the top of the
+    // logical screen; compute its logical-top accordingly.
+    // For all other rotations keep the original Deg90 logical coordinates.
+    const bool deg270 = (rot == Rotation::Deg270);
+    const int box_lx = kLoadLogX;
+    const int box_ly = deg270
+                           ? (DisplayFrame::kPhysicalWidth - kLoadPhysX - kLoadPhysW)  // = 4
+                           : kLoadLogY;
+
+    // Content rotation: portrait modes render correctly oriented; landscape falls
+    // back to Deg90 (text appears 90° rotated but still occupies the strip).
+    const Rotation content_rot = deg270 ? Rotation::Deg270 : Rotation::Deg90;
+
+    // Fill a logical rect in black using content_rot coordinate mapping.
     auto fill = [&](int lx, int ly, int lw, int lh) {
-      fill_rect_physical_(t, ly, DisplayFrame::kPhysicalHeight - lx - lw, lh, lw, /*white=*/false);
+      if (content_rot == Rotation::Deg270)
+        fill_rect_physical_(t, DisplayFrame::kPhysicalWidth - ly - lh, lx, lh, lw, /*white=*/false);
+      else  // Deg90
+        fill_rect_physical_(t, ly, DisplayFrame::kPhysicalHeight - lx - lw, lh, lw, /*white=*/false);
     };
 
     // Text centred horizontally, near top of loading region.
     const BitmapFont& font = ui_font_();
     if (text && *text) {
       const int tw = static_cast<int>(font.word_width(text, strlen(text), FontStyle::Regular));
-      const int text_lx = kWidth / 2 - tw / 2;
-      const int baseline_ly = kLoadLogY + 3 + static_cast<int>(font.baseline());
-      draw_text_impl_(t, text_lx, baseline_ly, text, strlen(text), font, GrayPlane::BW, false, FontStyle::Regular);
+      const int text_lx = box_lx + kLoadLogW / 2 - tw / 2;
+      const int baseline_ly = box_ly + 3 + static_cast<int>(font.baseline());
+      draw_text_impl_(t, text_lx, baseline_ly, text, strlen(text), font, GrayPlane::BW, false,
+                      FontStyle::Regular, content_rot);
     }
 
+    // Bar: centred within the content box.
+    const int barX = box_lx + (kLoadLogW - kBarW) / 2;
+    const int barY = box_ly + kLoadLogH - kBarH - 4;
+
     // Outline: 160x7, rounded corners (corner pixels stay white).
-    fill(kBarX + 1, kBarY, kBarW - 2, 1);              // top edge
-    fill(kBarX + 1, kBarY + kBarH - 1, kBarW - 2, 1);  // bottom edge
-    fill(kBarX, kBarY + 1, 1, kBarH - 2);              // left edge
-    fill(kBarX + kBarW - 1, kBarY + 1, 1, kBarH - 2);  // right edge
+    fill(barX + 1, barY, kBarW - 2, 1);              // top edge
+    fill(barX + 1, barY + kBarH - 1, kBarW - 2, 1);  // bottom edge
+    fill(barX, barY + 1, 1, kBarH - 2);              // left edge
+    fill(barX + kBarW - 1, barY + 1, 1, kBarH - 2);  // right edge
 
     // Inner bar: 3 rows (kBarH=7 -> border(0), pad(1), bar(2,3,4), pad(5), border(6)).
     // Sloped right side: bottom row widest, each row above is 1px shorter.
     const int max_fill = kBarW - 4;  // usable width inside border
     const int filled = (progress_pct * max_fill) / 100;
-    const int max_w = kBarW - 4;
     if (filled > 0) {
-      fill(kBarX + 2, kBarY + 4, std::min(filled + 2, max_w), 1);  // bottom row - widest
-      fill(kBarX + 2, kBarY + 3, std::min(filled + 1, max_w), 1);  // middle row
-      fill(kBarX + 2, kBarY + 2, std::min(filled, max_w), 1);      // top row - narrowest
+      fill(barX + 2, barY + 4, std::min(filled + 2, max_fill), 1);  // bottom row - widest
+      fill(barX + 2, barY + 3, std::min(filled + 1, max_fill), 1);  // middle row
+      fill(barX + 2, barY + 2, std::min(filled, max_fill), 1);      // top row - narrowest
     }
   }
 };
@@ -1069,10 +1212,15 @@ inline void DrawBuffer::draw_layout_line(uint8_t* buf, int x_offset, int baselin
   auto flush_ul = [&]() {
     if (!ul_href || ul_x1 <= ul_x0)
       return;
+    const int ul_w = ul_x1 - ul_x0;
     if (rotation_ == Rotation::Deg0)
-      fill_rect_physical_(t, ul_x0, ul_y, ul_x1 - ul_x0, ul_h, white);
-    else
-      fill_rect_physical_(t, ul_y, DisplayFrame::kPhysicalHeight - ul_x0 - (ul_x1 - ul_x0), ul_h, ul_x1 - ul_x0, white);
+      fill_rect_physical_(t, ul_x0, ul_y, ul_w, ul_h, white);
+    else if (rotation_ == Rotation::Deg90)
+      fill_rect_physical_(t, ul_y, DisplayFrame::kPhysicalHeight - ul_x0 - ul_w, ul_h, ul_w, white);
+    else if (rotation_ == Rotation::Deg180)
+      fill_rect_physical_(t, DisplayFrame::kPhysicalWidth - ul_x0 - ul_w, DisplayFrame::kPhysicalHeight - ul_y - ul_h, ul_w, ul_h, white);
+    else  // Deg270
+      fill_rect_physical_(t, DisplayFrame::kPhysicalWidth - ul_y - ul_h, ul_x0, ul_h, ul_w, white);
     ul_href = nullptr;
   };
 

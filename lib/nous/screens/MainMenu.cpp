@@ -337,6 +337,28 @@ void MainMenu::populate_list_() {
   }
 }
 
+int MainMenu::get_visible_count_(int H, int scroll_off) const {
+  if (ListMenuScreen::theme() != ListMenuScreen::MenuTheme::Codex)
+    return ListMenuScreen::get_visible_count_(H, scroll_off);
+  if (!ui_font_.valid() || !section_font_.valid()) return 0;
+  // Mirror draw_all_ Codex header: y=14, +hf_adv+4, +section_font_.y_advance()+8, rule, list_top=y+4
+  const int hf_adv = header_font_.valid() ? header_font_.y_advance() : ui_font_.y_advance();
+  const int list_top = 30 + hf_adv + section_font_.y_advance();
+  const int available_h = H - list_top;
+  // slot_h mirrors draw_all_ Codex slot formula
+  const int slot_h = 7 + ui_font_.y_advance() + 2 + section_font_.y_advance() + 5 + 1;
+  if (available_h <= 0 || slot_h <= 0) return 0;
+  // Codex draw skips separators (zero height); track visual span of rendered range.
+  int h = 0, last_vi = -1, n = count();
+  for (int vi = scroll_off; vi < n; ++vi) {
+    if (is_separator(vi)) { last_vi = vi; continue; }
+    if (h + slot_h > available_h) break;
+    h += slot_h;
+    last_vi = vi;
+  }
+  return last_vi >= scroll_off ? last_vi - scroll_off + 1 : 0;
+}
+
 void MainMenu::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) const {
   if (ListMenuScreen::theme() != ListMenuScreen::MenuTheme::Codex) {
     ListMenuScreen::draw_all_(buf, battery_pct);
@@ -404,22 +426,9 @@ void MainMenu::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) co
     if (s.second.empty())
       sep_vi = s.first;
 
-  // Compute visible count from actual Codex slot_h (base class uses a different
-  // slot height estimate, so ensure_visible_() may leave scroll_offset_ one short).
-  const int available_h = H - list_top;
-  const int visible_items = slot_h > 0 ? available_h / slot_h : 0;
-  const int max_so = std::max(0, count() - visible_items);
-
-  int so = std::min(scroll_offset(), max_so);
-  if (visible_items > 0) {
-    if (selected() < so)
-      so = selected();
-    else if (selected() >= so + visible_items)
-      so = std::max(0, selected() - visible_items + 1);
-  }
-
   // Pre-count library items scrolled past for correct numbering
   int library_num = 0;
+  const int so = scroll_offset();
   for (int vi = (sep_vi >= 0 ? sep_vi + 1 : 0); vi < so; ++vi)
     if (!is_separator(vi))
       ++library_num;
@@ -428,8 +437,7 @@ void MainMenu::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) co
   const StringPool& pool = BookIndex::instance().pool();
   int item_y = list_top;
 
-  // Use item_y + slot_h <= H so partial items never render at the bottom edge.
-  for (int vi = so; vi < count() && item_y + slot_h <= H; ++vi) {
+  for (int vi = so; vi < count() && item_y < H; ++vi) {
     if (is_separator(vi)) continue;
 
     const bool is_recent = (sep_vi >= 0 && vi < sep_vi);

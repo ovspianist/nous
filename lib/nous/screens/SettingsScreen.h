@@ -35,6 +35,9 @@ class SettingsScreen final : public ListMenuScreen {
   std::string_view get_item_subtitle(int index) const override;
   void draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct = std::nullopt) const override;
   bool is_item_focusable(int index) const override;
+  int get_visible_count_(int H, int scroll_off) const override;
+
+  static constexpr int kRowH = 28;
 
  protected:
   void on_start() override;
@@ -60,12 +63,13 @@ class SettingsScreen final : public ListMenuScreen {
   int idx_invert_bottom_paging_ = -1;
   int idx_invert_side_ = -1;
   int idx_rotate_display_ = -1;
+  int idx_reader_rotate_display_ = -1;
   int idx_menu_font_ = -1;
   int idx_font_ = -1;
   int idx_sleep_image_ = -1;
   int idx_nav_arrows_ = -1;
+  int idx_reader_images_ = -1;
   int idx_conv_indicator_ = -1;
-  int idx_render_images_ = -1;
   int idx_battery_display_ = -1;
   int idx_list_align_ = -1;
   int idx_sleep_timeout_ = -1;

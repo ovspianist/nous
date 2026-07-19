@@ -231,7 +231,7 @@ void ReaderOptionsScreen::on_start() {
 
   clear_items();
   idx_justify_ = idx_padding_h_ = idx_padding_v_ = idx_line_spacing_ = idx_progress_ = idx_progress_scope_ =
-      idx_chapters_ = idx_pub_fonts_ = idx_rotate_display_ = idx_links_ = idx_stats_ = -1;
+      idx_chapters_ = idx_pub_fonts_ = idx_hyphenation_ = idx_rotate_display_ = idx_reader_images_ = idx_links_ = idx_stats_ = -1;
 
   char tmp[40];
 
@@ -290,6 +290,9 @@ void ReaderOptionsScreen::on_start() {
     add_item(fmt_setting(tmp, sizeof(tmp), "Alignment",
                          ReaderSettings::kAlignNames[static_cast<uint8_t>(settings_->align_override)]));
 
+    idx_hyphenation_ = count();
+    add_item(fmt_setting(tmp, sizeof(tmp), "Hyphenation", settings_->hyphenation_enabled ? "On" : "Off"));
+
     add_separator();
 
     idx_padding_h_ = count();
@@ -312,8 +315,11 @@ void ReaderOptionsScreen::on_start() {
                            settings_->progress_scope == ProgressScope::Chapter ? "Chapter" : "Book"));
     }
 
-    idx_rotate_display_ = count();
-    add_item(fmt_setting(tmp, sizeof(tmp), "Display", app_ && app_->rotate_display() ? "Landscape" : "Portrait"));
+    idx_reader_images_ = count();
+    add_item(fmt_setting(tmp, sizeof(tmp), "Images", (app_ && !app_->show_reader_images()) ? "Off" : "On"));
+
+    idx_reader_rotate_display_ = count();
+    add_item(fmt_setting(tmp, sizeof(tmp), "Reader Display", rotation_label(app_ ? app_->rotate_reader() : 0)));
   }
 
   // Restore selection, adjusting for Links appearing or disappearing.
@@ -343,8 +349,34 @@ void ReaderOptionsScreen::refresh_items_(int restore_selection) {
   on_start();  // on_start() applies shift correction and calls set_selected().
 }
 
+int ReaderOptionsScreen::get_visible_count_(int H, int scroll_off) const {
+  int list_top = 16;
+  if (title_ && header_font_.valid()) {
+    list_top += header_font_.y_advance();
+    if (title2_) list_top += header_font_.y_advance();
+  } else if (title_) {
+    list_top += ui_font_.y_advance();
+  }
+  list_top += 4;
+  if (!subtitle_.empty())      list_top += ui_font_.y_advance() + 3;
+  if (!chapter_title_.empty()) list_top += ui_font_.y_advance() + 3;
+  list_top += ui_font_.y_advance() + 10 + 1;  // stats row + rule
+  const int available_h = H - list_top;
+  int h = 0, cnt = 0, n = count();
+  for (int i = scroll_off; i < n; ++i) {
+    const int item_h = is_separator(i)
+        ? (8 + (!get_item_label(i).empty() && section_font_.valid() ? section_font_.y_advance() : 0) + 4)
+        : kRowH;
+    if (h + item_h > available_h) break;
+    h += item_h;
+    cnt++;
+  }
+  return cnt;
+}
+
 void ReaderOptionsScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) const {
   const int W = buf.width();
+  const int H = buf.height();
   buf.fill(true);
 
   if (!ui_font_.valid() || !subtitle_font_.valid()) return;
@@ -420,9 +452,17 @@ void ReaderOptionsScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> batt
 
   // ── Item list ────────────────────────────────────────────────────────────
   const int n = count();
-  static constexpr int kRowH = 28;
-
+  // Compute total content height to decide whether scrolling is needed.
+  int total_h = 0;
   for (int i = 0; i < n; ++i) {
+    if (is_separator(i))
+      total_h += 8 + (!get_item_label(i).empty() && section_font_.valid() ? section_font_.y_advance() : 0) + 4;
+    else
+      total_h += kRowH;
+  }
+  const int so = (total_h <= H - y) ? 0 : scroll_offset();
+
+  for (int i = so; i < n && y < H; ++i) {
     const bool sel = (i == selected());
 
     if (is_separator(i)) {
@@ -482,6 +522,11 @@ void ReaderOptionsScreen::on_select(int index) {
     refresh_items_(index);
     return;
   }
+  if (index == idx_hyphenation_) {
+    settings_->hyphenation_enabled = !settings_->hyphenation_enabled;
+    refresh_items_(index);
+    return;
+  }
   if (index == idx_pub_fonts_) {
     settings_->override_publisher_fonts = !settings_->override_publisher_fonts;
     refresh_items_(index);
@@ -525,11 +570,17 @@ void ReaderOptionsScreen::on_select(int index) {
     refresh_items_(index);
     return;
   }
-  if (index == idx_rotate_display_) {
-    if (app_ && buf_) {
-      bool v = !app_->rotate_display();
-      app_->set_rotate_display(v);
-      buf_->set_rotation(v ? Rotation::Deg0 : Rotation::Deg90);
+  if (index == idx_reader_images_) {
+    if (app_) {
+      app_->set_show_reader_images(!app_->show_reader_images());
+      refresh_items_(index);
+    }
+    return;
+  }
+  if (index == idx_reader_rotate_display_) {
+    if (app_) {
+      uint8_t v = static_cast<uint8_t>((app_->rotate_reader() + 1) % 4);
+      app_->set_rotate_reader(v);
       refresh_items_(index);
     }
     return;

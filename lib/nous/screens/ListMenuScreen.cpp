@@ -94,27 +94,31 @@ int ListMenuScreen::nous_visible_from_(int scroll_off, int available_h) const {
   return cnt;
 }
 
-void ListMenuScreen::ensure_visible_() {
-  if (!ui_font_.valid() || count() == 0 || !buf_)
-    return;
+int ListMenuScreen::get_visible_count_(int H, int scroll_off) const {
   const int header_h = compute_header_h_();
-  int line_h, available_h, visible;
-  if (theme_ == MenuTheme::Chronicle || theme_ == MenuTheme::Stele || theme_ == MenuTheme::Codex) {
-    available_h = buf_->height() - header_h;
-    visible = nous_visible_from_(scroll_offset_, available_h);
-    line_h = nous_slot_h_();  // used for kPad logic below (close enough)
-  } else {
-    line_h = ui_font_.y_advance() + kItemSpacing;
-    available_h = buf_->height() - header_h - kBottomAreaH;
-    visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
+  if (theme_ == MenuTheme::Chronicle && subtitle_font_.valid() && subtitle_.empty())
+    return nous_visible_from_(scroll_off, H - header_h);
+  if ((theme_ == MenuTheme::Stele || !subtitle_.empty()) && subtitle_font_.valid()) {
+    static constexpr int kBarPadY = 6;
+    return nous_visible_from_(scroll_off, H - header_h - (kBarPadY + subtitle_font_.y_advance() + kBarPadY + 1));
   }
-  if (visible <= 0)
-    return;
+  const int line_h = ui_font_.y_advance() + kItemSpacing;
+  const int avail = H - header_h - kBottomAreaH;
+  return avail > 0 ? (avail + kItemSpacing) / line_h : 0;
+}
+
+void ListMenuScreen::ensure_visible_() {
+  if (!ui_font_.valid() || count() == 0 || !buf_) return;
+  const int H = buf_->height();
+  int visible = get_visible_count_(H, scroll_offset_);
+  if (visible <= 0) return;
   if (selected_ < scroll_offset_)
     scroll_offset_ = selected_;
   else if (selected_ >= scroll_offset_ + visible)
     scroll_offset_ = selected_ - visible + 1;
-
+  // Recompute from the updated offset: separators at different positions mean
+  // the actual count at the new offset can differ from the pre-adjustment count.
+  visible = get_visible_count_(H, scroll_offset_);
   static constexpr int kPad = 2;
   if (selected_ - scroll_offset_ < kPad && scroll_offset_ > 0)
     scroll_offset_ = std::max(0, selected_ - kPad);
@@ -125,25 +129,11 @@ void ListMenuScreen::ensure_visible_() {
 }
 
 void ListMenuScreen::center_on_selected_() {
-  if (!ui_font_.valid() || count() == 0 || !buf_)
-    return;
-  const int header_h = compute_header_h_();
-  int available_h, visible;
-  if (theme_ == MenuTheme::Chronicle || theme_ == MenuTheme::Stele || theme_ == MenuTheme::Codex) {
-    available_h = buf_->height() - header_h;
-    visible = nous_visible_from_(0, available_h);  // approximate
-  } else {
-    const int line_h = ui_font_.y_advance() + kItemSpacing;
-    available_h = buf_->height() - header_h - kBottomAreaH;
-    visible = available_h > 0 ? (available_h + kItemSpacing) / line_h : 0;
-  }
-  if (visible <= 0)
-    return;
-  int offset = selected_ - visible / 2;
+  if (!ui_font_.valid() || count() == 0 || !buf_) return;
+  const int visible = get_visible_count_(buf_->height(), 0);
+  if (visible <= 0) return;
   const int max_scroll = count() > visible ? count() - visible : 0;
-  if (offset < 0) offset = 0;
-  if (offset > max_scroll) offset = max_scroll;
-  scroll_offset_ = offset;
+  scroll_offset_ = std::max(0, std::min(max_scroll, selected_ - visible / 2));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

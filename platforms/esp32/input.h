@@ -124,7 +124,7 @@ class Esp32InputSource final : public microreader::IInputSource {
   static constexpr int kAdcNoBtn = 3800;  // ADC value when no key pressed
   static constexpr uint8_t kNumButtons = 7;
   static constexpr uint32_t kDebounceMs = 5;
-  static constexpr uint64_t kSampleIntervalUs = 10000;  // 10 ms (100 Hz)
+  static constexpr uint64_t kSampleIntervalUs = 5000;  // 5 ms
 
   static constexpr int kThresh1[4] = {3470, 2655, 1470, 3};  // Button0â€“3
   static constexpr int kThresh2[2] = {2205, 3};              // Up, Down

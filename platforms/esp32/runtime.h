@@ -55,10 +55,6 @@ class Esp32Runtime final : public microreader::IRuntime {
     if (!adc1_handle_)
       return std::nullopt;
 
-    const uint32_t now = millis();
-    if (last_pct_.has_value() && (now - last_battery_read_ms_) < kBatteryReadIntervalMs)
-      return last_pct_;
-
     int adc_raw = 0;
     if (adc_oneshot_read(adc1_handle_, BATTERY_ADC_CHANNEL, &adc_raw) != ESP_OK) {
       return std::nullopt;
@@ -68,6 +64,7 @@ class Esp32Runtime final : public microreader::IRuntime {
     if (adc_cali_handle_) {
       adc_cali_raw_to_voltage(adc_cali_handle_, adc_raw, &voltage_mv);
     } else {
+      // Fallback or handle differently if uncalibrated
       voltage_mv = adc_raw;
     }
 
@@ -82,8 +79,10 @@ class Esp32Runtime final : public microreader::IRuntime {
     y = std::min(y, 100.0);
     y = std::round(y);
 
-    last_battery_read_ms_ = now;
-
+    // Hysteresis: only update the displayed value when the new reading differs
+    // by more than kHysteresisPercent from the last displayed value.  This
+    // prevents voltage noise causing the indicator to flicker between adjacent
+    // percentages when switching screens.
     const int new_pct = static_cast<int>(y);
     if (!last_pct_.has_value() || std::abs(new_pct - static_cast<int>(last_pct_.value())) >= kHysteresisPercent) {
       last_pct_ = static_cast<uint8_t>(new_pct);
@@ -124,12 +123,10 @@ class Esp32Runtime final : public microreader::IRuntime {
   // Only update the displayed battery percentage when the reading has moved
   // at least this many percentage points away from the last displayed value.
   static constexpr int kHysteresisPercent = 3;
-  static constexpr uint32_t kBatteryReadIntervalMs = 15000;  // 15 seconds
 
   uint32_t frame_time_ms_;
   uint32_t frame_start_ms_;
   adc_oneshot_unit_handle_t adc1_handle_ = nullptr;
   adc_cali_handle_t adc_cali_handle_ = nullptr;
   mutable std::optional<uint8_t> last_pct_;
-  mutable uint32_t last_battery_read_ms_ = 0;
 };

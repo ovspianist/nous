@@ -180,6 +180,10 @@ class ListMenuScreen : public IScreen {
   void ensure_visible_();
   void center_on_selected_();
 
+  // Returns the number of visual indices visible from scroll_off given screen height H.
+  // Override in subclasses whose draw_all_() uses a custom header or item height.
+  virtual int get_visible_count_(int H, int scroll_off) const;
+
  private:
   std::vector<std::string_view> labels_;
   std::deque<std::string> owned_strings_;  // backing storage for copied labels

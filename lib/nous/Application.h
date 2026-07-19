@@ -39,6 +39,26 @@ enum class ScreenId : uint8_t {
   GrayscaleDemo,
 };
 
+// Maps the rotate_display / rotate_reader setting value (0-3) to the DrawBuffer Rotation enum.
+// 0=Portrait(Deg90), 1=Landscape(Deg0), 2=Portrait-Flip(Deg270), 3=Landscape-Flip(Deg180)
+inline Rotation rotation_from_setting(uint8_t v) {
+  switch (v) {
+    case 1:  return Rotation::Deg0;
+    case 2:  return Rotation::Deg270;
+    case 3:  return Rotation::Deg180;
+    default: return Rotation::Deg90;
+  }
+}
+
+inline const char* rotation_label(uint8_t v) {
+  switch (v) {
+    case 1:  return "Landscape";
+    case 2:  return "Portrait (Flip)";
+    case 3:  return "Landscape (Flip)";
+    default: return "Portrait";
+  }
+}
+
 class Application {
  public:
   Application() = default;
@@ -133,11 +153,11 @@ class Application {
   bool show_nav_arrows() const { return show_nav_arrows_; }
   void set_show_nav_arrows(bool v) { show_nav_arrows_ = v; save_settings_(); }
 
+  bool show_reader_images() const { return show_reader_images_; }
+  void set_show_reader_images(bool v);
+
   bool show_converted_indicator() const { return show_converted_indicator_; }
   void set_show_converted_indicator(bool v) { show_converted_indicator_ = v; save_settings_(); }
-
-  bool render_images() const { return render_images_; }
-  void set_render_images(bool v) { render_images_ = v; save_settings_(); }
 
   uint8_t battery_display() const { return battery_display_; }
   void set_battery_display(uint8_t v) { battery_display_ = v <= 2 ? v : 0; save_settings_(); }
@@ -174,11 +194,19 @@ class Application {
     invert_side_buttons_ = v;
   }
 
-  bool rotate_display() const {
+  uint8_t rotate_display() const {
     return rotate_display_;
   }
-  void set_rotate_display(bool v) {
-    rotate_display_ = v;
+  void set_rotate_display(uint8_t v) {
+    rotate_display_ = v <= 3 ? v : 0;
+    save_settings_();
+  }
+
+  uint8_t rotate_reader() const {
+    return rotate_reader_;
+  }
+  void set_rotate_reader(uint8_t v) {
+    rotate_reader_ = v <= 3 ? v : 0;
     save_settings_();
   }
 
@@ -276,7 +304,8 @@ class Application {
   bool invert_menu_buttons_ = false;
   bool invert_bottom_paging_ = true;
   bool invert_side_buttons_ = false;
-  bool rotate_display_ = false;
+  uint8_t rotate_display_ = 0;  // 0=Portrait(Deg90), 1=Landscape(Deg0), 2=Portrait-Flip(Deg270), 3=Landscape-Flip(Deg180)
+  uint8_t rotate_reader_ = 0;   // independent reader rotation, same encoding
 
   int menu_font_size_ = 2;  // Large default
   uint16_t open_counter_ = 0;  // monotonically increasing; incremented each time a book is opened
@@ -290,7 +319,7 @@ class Application {
 
   bool show_nav_arrows_ = false;
   bool show_converted_indicator_ = false;
-  bool render_images_ = true;
+  bool show_reader_images_ = true;
   uint8_t battery_display_ = 0;  // 0=icon, 1=number, 2=both
   uint8_t list_align_ = 0;       // 0=center, 1=left, 2=right
   uint8_t sleep_timeout_min_ = 10;  // 0=off, else minutes until auto-sleep

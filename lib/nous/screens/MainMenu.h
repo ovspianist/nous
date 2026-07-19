@@ -83,6 +83,7 @@ class MainMenu final : public ListMenuScreen {
   int count() const override;
 
   void draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct = std::nullopt) const override;
+  int get_visible_count_(int H, int scroll_off) const override;
 
   void start(DrawBuffer& buf, IRuntime& runtime) override {
     buf_ = &buf;

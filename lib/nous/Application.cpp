@@ -7,6 +7,7 @@
 #include "HeapLog.h"
 #include "content/BookIndex.h"
 #include "content/BmpSleepConverter.h"
+#include "content/ImageDecoder.h"
 #include "screens/ListMenuScreen.h"
 
 #ifdef ESP_PLATFORM
@@ -68,7 +69,10 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
   ListMenuScreen::set_theme(static_cast<ListMenuScreen::MenuTheme>(menu_theme_));
 
   // Apply persisted display rotation.
-  buf.set_rotation(rotate_display_ ? Rotation::Deg0 : Rotation::Deg90);
+  buf.set_rotation(rotation_from_setting(rotate_display_));
+
+  // Apply persisted image toggle.
+  images_enabled = show_reader_images_;
 
   screen_mgr_.push(&menu_, buf, runtime);
 
@@ -358,6 +362,7 @@ void microreader::Application::save_settings_() {
   std::fprintf(f, "progress=%u\n", static_cast<unsigned>(rs.progress_style));
   std::fprintf(f, "progress_scope=%u\n", static_cast<unsigned>(rs.progress_scope));
   std::fprintf(f, "override_pub_fonts=%u\n", rs.override_publisher_fonts ? 1u : 0u);
+  std::fprintf(f, "hyphenation=%u\n", rs.hyphenation_enabled ? 1u : 0u);
   std::fprintf(f, "font_size=%u\n", static_cast<unsigned>(rs.font_size_idx));
 
   // Menu list format
@@ -367,7 +372,8 @@ void microreader::Application::save_settings_() {
   std::fprintf(f, "inv_menu=%u\n", invert_menu_buttons_ ? 1u : 0u);
   std::fprintf(f, "inv_bpage=%u\n", invert_bottom_paging_ ? 1u : 0u);
   std::fprintf(f, "inv_side=%u\n", invert_side_buttons_ ? 1u : 0u);
-  std::fprintf(f, "rotate_display=%u\n", rotate_display_ ? 1u : 0u);
+  std::fprintf(f, "rotate_display=%u\n", static_cast<unsigned>(rotate_display_));
+  std::fprintf(f, "rotate_reader=%u\n", static_cast<unsigned>(rotate_reader_));
   std::fprintf(f, "menu_font_size=%d\n", menu_font_size_);
 
   if (!custom_font_path_.empty())
@@ -379,7 +385,7 @@ void microreader::Application::save_settings_() {
   std::fprintf(f, "sleep_image_idx=%d\n", sleep_image_idx_);
   std::fprintf(f, "show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
   std::fprintf(f, "show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
-  std::fprintf(f, "render_images=%u\n", render_images_ ? 1u : 0u);
+  std::fprintf(f, "show_reader_images=%u\n", show_reader_images_ ? 1u : 0u);
   std::fprintf(f, "battery_display=%u\n", static_cast<unsigned>(battery_display_));
   std::fprintf(f, "list_align=%u\n", static_cast<unsigned>(list_align_));
   std::fprintf(f, "sleep_timeout_min=%u\n", static_cast<unsigned>(sleep_timeout_min_));
@@ -391,6 +397,12 @@ void microreader::Application::save_settings_() {
 void microreader::Application::set_menu_theme(uint8_t v) {
   menu_theme_ = v % 4u;
   ListMenuScreen::set_theme(static_cast<ListMenuScreen::MenuTheme>(menu_theme_));
+  save_settings_();
+}
+
+void microreader::Application::set_show_reader_images(bool v) {
+  show_reader_images_ = v;
+  images_enabled = v;
   save_settings_();
 }
 
@@ -456,6 +468,8 @@ void microreader::Application::load_settings_() {
       rs.progress_scope = uval <= 1 ? static_cast<ProgressScope>(uval) : ProgressScope::Book;
     else if (std::sscanf(line, "override_pub_fonts=%u", &uval) == 1)
       rs.override_publisher_fonts = (uval != 0);
+    else if (std::sscanf(line, "hyphenation=%u", &uval) == 1)
+      rs.hyphenation_enabled = (uval != 0);
     else if (std::sscanf(line, "font_size=%u", &uval) == 1)
       rs.font_size_idx = uval < kMaxFontSizes ? static_cast<uint8_t>(uval) : 1;
     else if (std::sscanf(line, "list_format=%u", &uval) == 1)
@@ -471,7 +485,9 @@ void microreader::Application::load_settings_() {
     else if (std::sscanf(line, "inv_side=%u", &uval) == 1)
       invert_side_buttons_ = (uval != 0);
     else if (std::sscanf(line, "rotate_display=%u", &uval) == 1)
-      rotate_display_ = (uval != 0);
+      rotate_display_ = static_cast<uint8_t>(uval <= 3 ? uval : 0);
+    else if (std::sscanf(line, "rotate_reader=%u", &uval) == 1)
+      rotate_reader_ = static_cast<uint8_t>(uval <= 3 ? uval : 0);
     else if (std::sscanf(line, "menu_font_size=%u", &uval) == 1)
       menu_font_size_ = static_cast<int>(uval > 3 ? 3 : uval);
     else if (std::sscanf(line, "custom_font=%511[^\n]", sval) == 1)
@@ -486,8 +502,8 @@ void microreader::Application::load_settings_() {
       show_nav_arrows_ = (uval != 0);
     else if (std::sscanf(line, "show_conv_ind=%u", &uval) == 1)
       show_converted_indicator_ = (uval != 0);
-    else if (std::sscanf(line, "render_images=%u", &uval) == 1)
-      render_images_ = (uval != 0);
+    else if (std::sscanf(line, "show_reader_images=%u", &uval) == 1)
+      show_reader_images_ = (uval != 0);
     else if (std::sscanf(line, "battery_display=%u", &uval) == 1)
       battery_display_ = static_cast<uint8_t>(uval <= 2 ? uval : 0);
     else if (std::sscanf(line, "list_align=%u", &uval) == 1)

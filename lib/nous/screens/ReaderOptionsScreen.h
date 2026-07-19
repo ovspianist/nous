@@ -50,6 +50,7 @@ struct ReaderSettings {
   ProgressStyle progress_style = ProgressStyle::Bar;   // reading progress indicator style
   ProgressScope progress_scope = ProgressScope::Book;  // progress scope: whole book or current chapter
   bool override_publisher_fonts = false;               // ignore publisher's font sizes
+  bool hyphenation_enabled = true;                     // apply algorithmic hyphenation
 
   static constexpr uint16_t kHPaddingPresets[] = {4, 12, 24, 40};
   static constexpr uint16_t kVPaddingPresets[] = {0, 4, 12, 20};
@@ -132,6 +133,9 @@ class ReaderOptionsScreen final : public ListMenuScreen {
                       const MrbReader& mrb);
 
   void draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct = std::nullopt) const override;
+  int get_visible_count_(int H, int scroll_off) const override;
+
+  static constexpr int kRowH = 28;
 
   void stop() override {
     toc_ = nullptr;
@@ -167,8 +171,11 @@ class ReaderOptionsScreen final : public ListMenuScreen {
   int idx_progress_ = -1;
   int idx_progress_scope_ = -1;
   int idx_pub_fonts_ = -1;
+  int idx_hyphenation_ = -1;
   int idx_chapters_ = -1;
   int idx_rotate_display_ = -1;
+  int idx_reader_rotate_display_ = -1;
+  int idx_reader_images_ = -1;
   int idx_links_ = -1;
   int idx_stats_ = -1;
 

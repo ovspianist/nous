@@ -282,6 +282,8 @@ static std::string make_book_key_legacy(const EpubMetadata& meta, const char* ep
 
 void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   buf_ = &buf;
+  if (app_)
+    buf.set_rotation(rotation_from_setting(app_->rotate_reader()));
   book_key_.clear();
   pos_path_.clear();
   times_opened_ = 0;
@@ -427,6 +429,8 @@ show_error:
 
 void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
   buf_ = &buf;
+  if (app_)
+    buf.set_rotation(rotation_from_setting(app_->rotate_reader()));
   if (!open_ok_)
     return;
 
@@ -439,7 +443,7 @@ void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
     page_pos_ = saved_page_pos_;
     layout_engine_.set_source(*chapter_src_);
     layout_engine_.set_image_size_fn(image_size_fn_);
-    layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
+    layout_engine_.set_hyphenation_lang(reader_settings_.hyphenation_enabled ? detect_language(mrb_.metadata().language) : HyphenationLang::None);
   } else if (app_ && app_->links_screen()->has_pending()) {
     if (nav_history_.size() < kMaxNavHistory)
       nav_history_.push_back({saved_chapter_idx_, saved_page_pos_});
@@ -450,7 +454,7 @@ void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
     page_pos_ = saved_page_pos_;
     layout_engine_.set_source(*chapter_src_);
     layout_engine_.set_image_size_fn(image_size_fn_);
-    layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
+    layout_engine_.set_hyphenation_lang(reader_settings_.hyphenation_enabled ? detect_language(mrb_.metadata().language) : HyphenationLang::None);
   }
   // Check if font settings changed (font_size_idx may have been updated in options).
   if (const BitmapFontSet* fset = ext_font_set_ ? ext_font_set_ : (font_set_.valid() ? &font_set_ : nullptr)) {
@@ -486,6 +490,9 @@ void ReaderScreen::stop() {
   book_key_.shrink_to_fit();
   nav_history_.clear();
   open_ok_ = false;
+  // Restore the global menu rotation before handing the buffer back.
+  if (buf_ && app_)
+    buf_->set_rotation(rotation_from_setting(app_->rotate_display()));
   // saved_chapter_idx_ / saved_page_pos_ are intentionally NOT reset here —
   // resume() uses them as the nav-history origin when a link jump is pending.
   buf_ = nullptr;
@@ -546,7 +553,7 @@ void ReaderScreen::update(const ButtonState& buttons, DrawBuffer& buf, IRuntime&
             page_pos_ = origin.page_pos;
             layout_engine_.set_source(*chapter_src_);
             layout_engine_.set_image_size_fn(image_size_fn_);
-            layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
+            layout_engine_.set_hyphenation_lang(reader_settings_.hyphenation_enabled ? detect_language(mrb_.metadata().language) : HyphenationLang::None);
             render_page_(buf);
             buf.refresh();
             save_position_();
@@ -819,12 +826,10 @@ void ReaderScreen::render_page_(DrawBuffer& buf) {
     buf.fill_rect(static_cast<int>(h->x_offset), hr_y - 1, static_cast<int>(h->width), 2, false);
   }
 
-  if (!app_ || app_->render_images()) {
-    for (const auto& itd : images) {
-      if (!decode_image_to_buffer_(itd.key, itd.offset, buf, itd.x, itd.y, static_cast<uint16_t>(itd.w),
-                                   static_cast<uint16_t>(itd.h), itd.src_y, itd.clip_h)) {
-        buf.fill_rect(itd.x, itd.y, itd.w, itd.h, false);
-      }
+  for (const auto& itd : images) {
+    if (!decode_image_to_buffer_(itd.key, itd.offset, buf, itd.x, itd.y, static_cast<uint16_t>(itd.w),
+                                 static_cast<uint16_t>(itd.h), itd.src_y, itd.clip_h)) {
+      buf.fill_rect(itd.x, itd.y, itd.w, itd.h, false);
     }
   }
 
