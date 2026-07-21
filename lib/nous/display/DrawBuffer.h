@@ -8,7 +8,7 @@
 
 #include "../content/BitmapFont.h"
 #include "../content/TextLayout.h"
-#include "ui_font_small.h"
+#include "ui_font_profile_small.h"
 
 #ifdef ESP_PLATFORM
 #include "asset_blob.h"
@@ -866,7 +866,7 @@ class DrawBuffer {
     return bufs_[active_idx_];
   }
 
-  // Returns the shared UI font backed by ui_font_small.h data.
+  // Returns the shared small font from the selected UI font profile.
   static const BitmapFont& ui_font_() {
     static BitmapFont font(kFontData_ui_small_mbf, sizeof(kFontData_ui_small_mbf));
     return font;

@@ -8,10 +8,7 @@
 
 #include "../Application.h"
 #include "../display/brand_font_nous.h"
-#include "../display/ui_font_header.h"
-#include "../display/ui_font_large.h"
-#include "../display/ui_font_medium.h"
-#include "../display/ui_font_small.h"
+#include "../display/ui_font_profile.h"
 
 namespace microreader {
 
