@@ -8,7 +8,7 @@
 #include "../Application.h"
 #include "../HeapLog.h"
 #include "../content/ReaderSyncStore.h"
-#include "../display/ui_font_small.h"
+#include "../display/ui_font_profile_small.h"
 
 #ifdef ESP_PLATFORM
 #include <sys/stat.h>
