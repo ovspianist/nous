@@ -147,6 +147,13 @@ void SettingsScreen::ensure_visible_() {
   ListMenuScreen::ensure_visible_();
   if (scroll_offset() < tab_start_[active_tab_])
     set_scroll_offset_(tab_start_[active_tab_]);
+  // kPad in the base class can over-scroll short tabs. If the selected item is
+  // already reachable from tab_start_, reset to tab_start_.
+  const int H = current_height_();
+  if (H > 0 && scroll_offset() > tab_start_[active_tab_]) {
+    if (selected() - tab_start_[active_tab_] < get_visible_count_(H, tab_start_[active_tab_]))
+      set_scroll_offset_(tab_start_[active_tab_]);
+  }
 }
 
 // ---------------------------------------------------------------------------

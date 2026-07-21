@@ -184,6 +184,7 @@ class ListMenuScreen : public IScreen {
   virtual void draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct = std::nullopt) const;
   virtual void ensure_visible_();
   void set_scroll_offset_(int v) { scroll_offset_ = v; }
+  int current_height_() const { return buf_ ? buf_->height() : 0; }
   void center_on_selected_();
 
   // Returns the number of visual indices visible from scroll_off given screen height H.
