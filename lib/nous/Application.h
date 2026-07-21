@@ -271,6 +271,10 @@ class Application {
   // counter in the index and persists both the index and settings.
   void record_book_opened(const std::string& path);
 
+  // Import shared CrossInk/Nous recent-book ordering after BookIndex is loaded.
+  // Runs at most once per boot and preserves Nous reading-time statistics.
+  void synchronize_reader_recents();
+
   // Extract cover.bin for the given EPUB if it doesn't exist yet.
   // No-op if data_dir is not set or the EPUB has no cover.
   // Blocking — can take ~1s on first call for old books.
@@ -328,7 +332,8 @@ class Application {
   uint8_t rotate_reader_ = 0;   // independent reader rotation, same encoding
 
   int menu_font_size_ = 2;  // Large default
-  uint16_t open_counter_ = 0;  // monotonically increasing; incremented each time a book is opened
+  uint32_t open_counter_ = 0;  // shared monotonically increasing book-open sequence
+  bool reader_sync_recent_done_ = false;
 
   std::string custom_font_path_;
   std::string installed_font_path_;

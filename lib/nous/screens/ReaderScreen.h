@@ -131,6 +131,10 @@ class ReaderScreen final : public IScreen {
   bool open_ok_ = false;
   bool buf_was_touched_ = false;
   bool cache_only_ = false;
+  bool shared_position_imported_ = false;
+  size_t shared_start_chapter_idx_ = 0;
+  PagePosition shared_start_page_pos_;
+  uint32_t pending_shared_position_ppm_ = 0;
 
   uint32_t times_opened_ = 0;
   uint64_t reading_ms_total_ = 0;
@@ -179,6 +183,9 @@ class ReaderScreen final : public IScreen {
   void load_chapter_(size_t idx);
   void save_position_();
   void load_position_();
+  PagePosition position_from_shared_ppm_(uint32_t intra_spine_ppm) const;
+  uint32_t current_shared_ppm_() const;
+  void export_shared_position_();
 
  public:
   // Stats accessors — valid while book is open or after stop() (values persist until next start()).

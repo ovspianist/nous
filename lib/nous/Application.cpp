@@ -1,5 +1,6 @@
 #include "Application.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include "content/BookIndex.h"
 #include "content/BmpSleepConverter.h"
 #include "content/ImageDecoder.h"
+#include "content/ReaderSyncStore.h"
 #include "screens/ListMenuScreen.h"
 
 #ifdef ESP_PLATFORM
@@ -429,11 +431,39 @@ void microreader::Application::update_book_read_time(const std::string& path, ui
 }
 
 void microreader::Application::record_book_opened(const std::string& path) {
-  BookIndex::instance().set_last_opened(path, ++open_counter_);
+  std::string title;
+  std::string author;
+  const auto& index = BookIndex::instance();
+  const auto& pool = index.pool();
+  for (const auto& entry : index.entries()) {
+    if (entry.path.view(pool) == path) {
+      title.assign(entry.title.view(pool));
+      author.assign(entry.author.view(pool));
+      break;
+    }
+  }
+
+  const uint32_t shared_sequence =
+      reader_sync::record_book_opened(data_dir_, path, title, author);
+  if (shared_sequence != 0)
+    open_counter_ = std::max(open_counter_, shared_sequence);
+  else if (open_counter_ < UINT32_MAX)
+    ++open_counter_;
+
+  BookIndex::instance().set_last_opened(path, open_counter_);
   if (data_dir_) {
     std::string index_path = std::string(data_dir_) + "/book_index.dat";
     BookIndex::instance().save(index_path);
   }
+  save_settings_();
+}
+
+void microreader::Application::synchronize_reader_recents() {
+  if (reader_sync_recent_done_ || !data_dir_ || BookIndex::instance().entries().empty())
+    return;
+  const std::string index_path = std::string(data_dir_) + "/book_index.dat";
+  reader_sync::synchronize_recent_books(data_dir_, BookIndex::instance(), open_counter_, index_path);
+  reader_sync_recent_done_ = true;
   save_settings_();
 }
 void Application::ensure_cover_bin(const std::string& epub_path) {

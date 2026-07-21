@@ -55,6 +55,7 @@ Four visual themes, switchable from Settings:
 | **Converted Indicator** | Marks already-converted books on the list. Stele uses `·dots·`, Codex shows `· not converted` on unconverted books when enabled |
 | **Reading Stats** | Per-book open count and total reading time — visible from the book options screen. Updates live while reading |
 | **Hidden Books** | Drop EPUBs into a `.hidden/` folder on the SD card. They won't appear in the list, recents, or auto-open on boot. Long-press Back (~3s) from the book list to access them |
+| **CrossInk Reader Sync** | Shares recent EPUB openings, list removals, and approximate resume positions with CrossInk through `/.nous-crossink-reader-sync/` on the SD card |
 
 ### Display & Controls
 
@@ -66,6 +67,7 @@ Four visual themes, switchable from Settings:
 | **Auto-Sleep** | Configurable inactivity timeout — 1 / 3 / 5 / 10 / 20 / 30 min, or Off |
 | **Sleep Image** | Custom sleep screen from SD card (`.mgr` or `.bmp` in `/.sleep/`), with a selectable Auto Rotate mode |
 | **Button Remapping** | Invert menu navigation direction, bottom paging direction, and side button paging direction independently |
+| **Dual Progress Bars** | In Bar mode, the configured chapter/book progress remains at the bottom and the complementary scope appears at the top |
 
 ### Fonts
 

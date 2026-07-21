@@ -46,6 +46,7 @@ void LyraScreen::on_start() {
   if (app_ && app_->data_dir_) {
     const std::string idx_path = std::string(app_->data_dir_) + "/book_index.dat";
     BookIndex::instance().load(idx_path);
+    app_->synchronize_reader_recents();
   }
 
   has_recent_ = false;
