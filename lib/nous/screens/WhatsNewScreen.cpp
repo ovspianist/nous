@@ -55,15 +55,27 @@ void WhatsNewScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t>) const {
 
   // ── New ────────────────────────────────────────────────────────────────
   section("NEW");
-  line("Tabbed Settings",              body_f);
-  line("Refined Menu Font (Inter)",    body_f);
-  line("Sleep Screen Text Toggle",     body_f);
-  line("Convert All respects menu font", body_f);
+  line("Tabbed Settings",                   body_f);
+  line("What's New screen",                 body_f);
+  line("nous logotype font",                body_f);
+  line("Refined Menu Font (Inter)",         body_f);
+  line("Sleep Screen Text Toggle",          body_f);
+  line("Convert All respects menu font",    body_f);
+  line("Lyra themes: portrait-only layout", body_f);
+  line("Lyra themes: redesigned tooltips",  body_f);
+
+  y += kSectionGap;
+
+  // ── Fixed ──────────────────────────────────────────────────────────────
+  section("FIXED");
+  line("Settings scroll on short tabs",     body_f);
+  line("Landscape auto-corrects on Lyra",   body_f);
 
   y += kSectionGap;
 
   // ── Changed ────────────────────────────────────────────────────────────
   section("CHANGED");
+  line("Minimal is now the default theme",  body_f);
   line("Theme names updated for clarity",   body_f);
   line("Literata replaces Bookerly",        body_f);
   line("(drop .mfb in SD/fonts/ for custom)", caption_f, kIndent);

@@ -168,6 +168,8 @@ class ListMenuScreen : public IScreen {
   BitmapFont header_font_;
   BitmapFont subtitle_font_;   // always small; used for item subtitles and tight labels
   BitmapFont section_font_;    // one step below ui_font_; use for APPEARANCE/NAVIGATE etc.
+  BitmapFont brand_font_;        // "nous" logotype, sized to match ui_font_
+  BitmapFont brand_header_font_; // "nous" logotype, sized to match header_font_
   static int font_size_idx_;  // 0=Normal, 1=Large, 2=XLarge
   static MenuTheme theme_;
 
@@ -185,6 +187,8 @@ class ListMenuScreen : public IScreen {
   virtual void ensure_visible_();
   void set_scroll_offset_(int v) { scroll_offset_ = v; }
   int current_height_() const { return buf_ ? buf_->height() : 0; }
+  Rotation current_rotation_() const { return buf_ ? buf_->rotation() : Rotation::Deg90; }
+  void set_buf_rotation_(Rotation r) { if (buf_) buf_->set_rotation(r); }
   void center_on_selected_();
 
   // Returns the number of visual indices visible from scroll_off given screen height H.

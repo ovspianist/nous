@@ -352,7 +352,7 @@ class Application {
   uint8_t battery_display_ = 0;  // 0=icon, 1=number, 2=both
   uint8_t list_align_ = 0;       // 0=center, 1=left, 2=right
   uint8_t sleep_timeout_min_ = 10;  // 0=off, else minutes until auto-sleep
-  uint8_t menu_theme_ = 3;       // 3=Codex default
+  uint8_t menu_theme_ = 4;       // 4=Lyra default
 
   std::string last_seen_version_;
   bool show_whats_new_on_update_ = true;

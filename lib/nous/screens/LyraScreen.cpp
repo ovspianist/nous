@@ -43,6 +43,13 @@ static void blit_cover(DrawBuffer& buf, int dst_x, int dst_y,
 
 
 void LyraScreen::on_start() {
+  // Lyra is portrait-only; clamp landscape rotations to portrait and persist it.
+  const Rotation rot = current_rotation_();
+  if (rot == Rotation::Deg0 || rot == Rotation::Deg180) {
+    set_buf_rotation_(Rotation::Deg90);
+    if (app_) app_->set_rotate_display(0);  // 0 = Portrait (Deg90)
+  }
+
   if (app_ && app_->data_dir_) {
     const std::string idx_path = std::string(app_->data_dir_) + "/book_index.dat";
     BookIndex::instance().load(idx_path);
@@ -215,10 +222,10 @@ void LyraScreen::draw_all_(DrawBuffer& buf, std::optional<uint8_t> battery_pct) 
 
   // ── Header ───────────────────────────────────────────────────────────────
   int y = 10;
-  if (header_font_.valid())
-    buf.draw_text_proportional(kPad, y + header_font_.baseline(), "NOUS", header_font_, false);
-  else
-    buf.draw_text_proportional(kPad, y + ui_font_.baseline(), "NOUS", ui_font_, false);
+  {
+    const BitmapFont& brand_f = brand_font_.valid() ? brand_font_ : ui_font_;
+    buf.draw_text_proportional(kPad, y + brand_f.baseline(), "nous", brand_f, false);
+  }
 
   if (battery_pct) {
     char pbuf[8];

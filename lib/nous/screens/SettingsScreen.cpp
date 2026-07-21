@@ -296,8 +296,13 @@ void SettingsScreen::on_start() {
   idx_theme_ = count();
   add_item(get_theme_label(app_ ? app_->menu_theme() : 0));
 
-  idx_rotate_display_ = count();
-  add_item(get_rotate_menu_label(app_ ? app_->rotate_display() : 0));
+  const uint8_t cur_theme = app_ ? app_->menu_theme() : 0;
+  const bool is_lyra_theme = (cur_theme == static_cast<uint8_t>(MenuTheme::Lyra) ||
+                               cur_theme == static_cast<uint8_t>(MenuTheme::LyraExt));
+  if (!is_lyra_theme) {
+    idx_rotate_display_ = count();
+    add_item(get_rotate_menu_label(app_ ? app_->rotate_display() : 0));
+  }
 
   idx_menu_font_ = count();
   add_item(get_menu_font_label(app_ ? app_->menu_font_size() : 0));
@@ -558,8 +563,9 @@ void SettingsScreen::apply_picker_(int sel) {
   if (!app_) return;
 
   if (picker_target_ == idx_theme_) {
+    static constexpr uint8_t kThemeOrder[] = {1, 0, 2, 3, 4, 5};
     const uint8_t old_v = app_->menu_theme();
-    const uint8_t v = static_cast<uint8_t>(sel);
+    const uint8_t v = kThemeOrder[sel >= 0 && sel < 6 ? sel : 0];
     app_->set_menu_theme(v);
     set_item_label(idx_theme_, get_theme_label(v));
     if (v == static_cast<uint8_t>(ListMenuScreen::MenuTheme::Lyra))
@@ -633,9 +639,17 @@ void SettingsScreen::apply_picker_(int sel) {
 
 void SettingsScreen::on_select(int index) {
   if (index == idx_theme_) {
+    // Picker order: Minimal(1), Chronicle(0), Stele(2), Codex(3), Lyra(4), LyraExt(5)
+    static constexpr uint8_t kThemeOrder[] = {1, 0, 2, 3, 4, 5};
+    int cur_sel = 0;
+    if (app_) {
+      const uint8_t cur = app_->menu_theme();
+      for (int i = 0; i < 6; ++i)
+        if (kThemeOrder[i] == cur) { cur_sel = i; break; }
+    }
     open_picker_("Select Theme", idx_theme_,
-      {"Chronicle", "Minimal", "Stele", "Codex", "Lyra Like", "Lyra Extended Like"},
-      app_ ? static_cast<int>(app_->menu_theme()) : 0);
+      {"Minimal", "Chronicle", "Stele", "Codex", "Lyra Like", "Lyra Extended Like"},
+      cur_sel);
     return;
   }
   if (index == idx_reader_images_) {
