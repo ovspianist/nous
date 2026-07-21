@@ -60,6 +60,7 @@ EPUB file (ZIP on SD card)
 | `MrbWriter.h/.cpp` | Writes `.mrb` binary files. `BufferedFileWriter` batches into 4KB buffer. Paragraphs are doubly-linked (prev/next offsets). Uses **deferred paragraph writing**: each paragraph is serialized into `pending_para_` buffer, then flushed when the *next* paragraph arrives (so `next_offset` can be filled in without seeking). This eliminates all backward seeks in `end_chapter()`. |
 | `MrbConverter.h/.cpp` | Orchestrates EPUB→MRB conversion: iterates spine chapters, streams paragraphs via `ParagraphSink` callback from `EpubParser` → `MrbWriter`. Exposes `convert_epub_to_mrb()` and `convert_epub_to_mrb_streaming()`. |
 | `HtmlExporter.h/.cpp` | Exports a `Book` to a self-contained HTML file using the `TextLayout` engine to paginate content exactly as the reader would. Used by `HtmlExportTest`. Options control page size, padding, chapter limit, and debug output. |
+| `ReaderSyncStore.h/.cpp` | Versioned interoperability store under `/.nous-crossink-reader-sync/`. Normalizes `/sdcard/...` paths, merges recent-book order, and exchanges approximate OPF spine positions with CrossInk without replacing native Nous data. |
 
 ### Memory constraints (critical for ESP32-C3)
 
@@ -128,6 +129,9 @@ Button3 = up / prev page
   - **Desktop**: Loads individual `.mbf` files from `resources/fonts/` (`font-0.mbf` up to `font-3.mbf`).
   - **Generation**: `python tools/generate_font.py "resources/fonts/Bookerly.ttf" -o resources/fonts/font-normal.mbf --with-styles --bold "resources/fonts/Bookerly Bold.ttf" --italic "resources/fonts/Bookerly Italic.ttf" --bold-italic "resources/fonts/Bookerly Bold Italic.ttf" --bundle --bundle-sizes 20 24 28 32 --font-name Bookerly` generates 4 sizes + bundle.
 - **Input**: `ButtonState` carries `current` + `pressed_latch`. Auto-repeat at hardware layer (5ms sample on ESP32). Screens use `is_pressed()`.
+- **Sleep wallpapers**: An empty `sleep_image_path_` selects the user-facing **Auto Rotate** mode. `Application::do_sleep_()` advances and persists `sleep_image_idx_` so each sleep uses the next SD-card image; an individual image path pins that wallpaper. Sleep images are rendered without a text overlay.
+- **CrossInk reader sync**: `ReaderSyncStore` uses one bounded binary `.ncrs` record per canonical SD-relative EPUB path under `/.nous-crossink-reader-sync/books/`. The shared resume coordinate is OPF spine index plus intra-spine parts per million. Recent-list removals are sequenced tombstones that clear `last_open_order` without deleting the `BookIndex` entry or its reading-time data; reopening the book writes a newer present event. Import only positions whose source is CrossInk, export Nous positions when leaving the reader, and never overwrite Nous's native `.pos` or reading-time data with foreign data.
+- **Reader progress bars**: `ProgressStyle::Bar` draws the configured `ProgressScope` at the bottom and its complementary chapter/book scope at the top. Percentage and None modes retain their single-indicator behavior.
 - **Loop**: `run_loop()` polls input → app.update() → queue.tick() → wait_next_frame().
 - **Logging** (`HeapLog.h`): `MR_LOGI(tag, fmt, ...)` maps to `ESP_LOGI` on device and `printf("[tag] fmt\n")` on desktop. `HEAP_LOG(tag)` logs free heap + largest block (ESP32-only, no-op on desktop). No `ILogger` abstraction — use these macros directly.
 

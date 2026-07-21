@@ -31,6 +31,7 @@ set(lib_sources
     ${LIB}/content/hyphenation/Hyphenation.cpp
     ${LIB}/content/Book.cpp
     ${LIB}/content/BookIndex.cpp
+    ${LIB}/content/ReaderSyncStore.cpp
     ${LIB}/content/mrb/MrbWriter.cpp
     ${LIB}/content/mrb/MrbReader.cpp
     ${LIB}/content/mrb/MrbConverter.cpp
@@ -56,6 +57,5 @@ idf_component_register(
 idf_build_get_property(compile_opts COMPILE_OPTIONS)
 list(REMOVE_ITEM compile_opts "-Wno-old-style-declaration" "-Werror=old-style-declaration")
 idf_build_set_property(COMPILE_OPTIONS "${compile_opts}")
-
 
 

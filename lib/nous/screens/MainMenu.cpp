@@ -55,6 +55,7 @@ void MainMenu::on_start() {
   std::string index_path = std::string(app_->data_dir_) + "/book_index.dat";
 
   if (BookIndex::instance().load(index_path)) {
+    app_->synchronize_reader_recents();
     populate_list_();
     needs_scan_ = false;
   } else {
@@ -156,6 +157,7 @@ void MainMenu::scan_directory_(DrawBuffer& buf) {
 
   BookIndex::instance().build_index(root_dir, buf);
   BookIndex::instance().save(index_path);
+  app_->synchronize_reader_recents();
 
   buf.reset_after_scratch(true);
 }

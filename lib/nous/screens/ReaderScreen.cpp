@@ -1,11 +1,13 @@
 #include "ReaderScreen.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 #include "../Application.h"
 #include "../HeapLog.h"
+#include "../content/ReaderSyncStore.h"
 #include "../display/ui_font_small.h"
 
 #ifdef ESP_PLATFORM
@@ -306,6 +308,7 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
 
   MR_LOGI("reader", "mrb_path='%s'", mrb_path_.c_str());
   bool mrb_ok = mrb_.open(mrb_path_.c_str());
+  reader_sync::Position shared_position;
   MR_LOGI("reader", "mrb_ok=%d", (int)mrb_ok);
 
   const bool cache_only = cache_only_;
@@ -391,7 +394,17 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   image_size_fn_ = make_image_size_query(mrb_, path_, static_cast<uint16_t>(buf.width()));
   saved_chapter_idx_ = 0;
   saved_page_pos_ = PagePosition{0, 0};
+  shared_position_imported_ = false;
+  pending_shared_position_ppm_ = 0;
   load_position_();
+  if (reader_sync::load_crossink_position(data_dir_.c_str(), path_, shared_position) &&
+      shared_position.spine_index < mrb_.chapter_count()) {
+    saved_chapter_idx_ = shared_position.spine_index;
+    pending_shared_position_ppm_ = shared_position.intra_spine_ppm;
+    shared_position_imported_ = true;
+    MR_LOGI("reader_sync", "import CrossInk position ch=%u ppm=%lu", (unsigned)saved_chapter_idx_,
+            (unsigned long)pending_shared_position_ppm_);
+  }
   times_opened_++;
   if (app_) session_start_ms_ = app_->uptime_ms();
   save_position_();
@@ -411,7 +424,15 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   layout_engine_.set_source(*chapter_src_);
   layout_engine_.set_image_size_fn(image_size_fn_);
   layout_engine_.set_hyphenation_lang(detect_language(mrb_.metadata().language));
+  if (shared_position_imported_) {
+    page_pos_ = position_from_shared_ppm_(pending_shared_position_ppm_);
+    saved_page_pos_ = page_pos_;
+  }
   render_page_(buf);
+  if (shared_position_imported_) {
+    shared_start_chapter_idx_ = chapter_idx_;
+    shared_start_page_pos_ = page_pos_;
+  }
 #ifdef ESP_PLATFORM
   ESP_LOGI("reader", "BOOK_OK: %s", path_.c_str());
 #endif
@@ -472,6 +493,12 @@ void ReaderScreen::resume(DrawBuffer& buf, IRuntime& runtime) {
 void ReaderScreen::stop() {
   if (open_ok_ && app_)
     reading_ms_total_ += static_cast<uint64_t>(app_->uptime_ms() - session_start_ms_);
+  if (open_ok_ && chapter_src_) {
+    const bool moved_since_import = !shared_position_imported_ || chapter_idx_ != shared_start_chapter_idx_ ||
+                                    page_pos_ != shared_start_page_pos_;
+    if (moved_since_import)
+      export_shared_position_();
+  }
   image_size_fn_ = {};
   chapter_src_.reset();
   mrb_.close();
@@ -490,6 +517,7 @@ void ReaderScreen::stop() {
   book_key_.shrink_to_fit();
   nav_history_.clear();
   open_ok_ = false;
+  shared_position_imported_ = false;
   // Restore the global menu rotation before handing the buffer back.
   if (buf_ && app_)
     buf_->set_rotation(rotation_from_setting(app_->rotate_display()));
@@ -873,7 +901,8 @@ void ReaderScreen::draw_bottom_(DrawBuffer& buf, bool landscape) {
   const int H = buf.height();
 
   if (mrb_.paragraph_count() > 0 && reader_settings_.progress_style != ProgressStyle::None) {
-    int pct = reader_settings_.progress_scope == ProgressScope::Chapter ? chapter_progress_pct() : progress_pct();
+    const int pct = std::clamp(
+        reader_settings_.progress_scope == ProgressScope::Chapter ? chapter_progress_pct() : progress_pct(), 0, 100);
     if (reader_settings_.progress_style == ProgressStyle::Percentage) {
       char pct_str[8];
       snprintf(pct_str, sizeof(pct_str), "%d%%", pct);
@@ -886,6 +915,16 @@ void ReaderScreen::draw_bottom_(DrawBuffer& buf, bool landscape) {
       const int bar_w = pct * W / 100;
       buf.fill_rect(0, kBarY, bar_w, kBarH, false);         // filled portion (black)
       buf.fill_rect(bar_w, kBarY, W - bar_w, kBarH, true);  // unfilled portion (white)
+
+      // Mirror the other scope at the top edge: chapter below means book
+      // above, and book below means chapter above.
+      const int complementary_pct = std::clamp(
+          reader_settings_.progress_scope == ProgressScope::Chapter ? progress_pct() : chapter_progress_pct(), 0,
+          100);
+      const int top_bar_y = landscape ? 2 : 0;
+      const int top_bar_w = complementary_pct * W / 100;
+      buf.fill_rect(0, top_bar_y, top_bar_w, kBarH, false);
+      buf.fill_rect(top_bar_w, top_bar_y, W - top_bar_w, kBarH, true);
     }
   }
 
@@ -1140,6 +1179,70 @@ void ReaderScreen::load_position_() {
         std::fclose(fw);
       }
     }
+  }
+}
+
+PagePosition ReaderScreen::position_from_shared_ppm_(uint32_t intra_spine_ppm) const {
+  if (!chapter_src_ || chapter_src_->paragraph_count() == 0)
+    return PagePosition{};
+
+  intra_spine_ppm = std::min(intra_spine_ppm, reader_sync::kPositionScale);
+  const size_t paragraph_count = chapter_src_->paragraph_count();
+  const uint64_t total_chars = chapter_src_->total_chars();
+  if (total_chars == 0) {
+    const size_t index = paragraph_count > 1
+                             ? static_cast<size_t>(static_cast<uint64_t>(intra_spine_ppm) * (paragraph_count - 1) /
+                                                   reader_sync::kPositionScale)
+                             : 0;
+    return PagePosition{static_cast<uint16_t>(index), 0, 0};
+  }
+
+  uint64_t target = (total_chars * intra_spine_ppm + reader_sync::kPositionScale / 2) /
+                    reader_sync::kPositionScale;
+  if (target >= total_chars)
+    target = total_chars - 1;
+
+  size_t low = 0;
+  size_t high = paragraph_count;
+  while (low < high) {
+    const size_t mid = low + (high - low) / 2;
+    if (chapter_src_->char_before_para(mid) <= target)
+      low = mid + 1;
+    else
+      high = mid;
+  }
+  const size_t paragraph = low > 0 ? low - 1 : 0;
+  const uint64_t paragraph_start = chapter_src_->char_before_para(paragraph);
+  const uint32_t text_offset = static_cast<uint32_t>(std::min<uint64_t>(target - paragraph_start, UINT32_MAX));
+  return PagePosition{static_cast<uint16_t>(paragraph), 0, text_offset};
+}
+
+uint32_t ReaderScreen::current_shared_ppm_() const {
+  if (!chapter_src_ || chapter_src_->paragraph_count() == 0)
+    return 0;
+  if (page_.at_chapter_end)
+    return reader_sync::kPositionScale;
+
+  const uint64_t total_chars = chapter_src_->total_chars();
+  if (total_chars == 0) {
+    const size_t count = chapter_src_->paragraph_count();
+    return count > 1 ? static_cast<uint32_t>(static_cast<uint64_t>(page_pos_.paragraph) *
+                                             reader_sync::kPositionScale / (count - 1))
+                     : 0;
+  }
+  const uint64_t current =
+      std::min<uint64_t>(total_chars, chapter_src_->char_before_para(page_pos_.paragraph) + page_pos_.text_offset);
+  return static_cast<uint32_t>(current * reader_sync::kPositionScale / total_chars);
+}
+
+void ReaderScreen::export_shared_position_() {
+  if (data_dir_.empty() || path_.empty() || chapter_idx_ > UINT16_MAX)
+    return;
+  const auto& metadata = mrb_.metadata();
+  const std::string_view author = metadata.author ? std::string_view(*metadata.author) : std::string_view{};
+  if (!reader_sync::save_nous_position(data_dir_.c_str(), path_, metadata.title, author,
+                                       static_cast<uint16_t>(chapter_idx_), current_shared_ppm_())) {
+    MR_LOGI("reader_sync", "failed to export position for %s", path_.c_str());
   }
 }
 
