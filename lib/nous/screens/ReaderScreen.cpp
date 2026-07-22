@@ -289,6 +289,7 @@ void ReaderScreen::start(DrawBuffer& buf, IRuntime& runtime) {
   times_opened_ = 0;
   reading_ms_total_ = 0;
   session_start_ms_ = 0;
+  page_turn_count_ = 0;
   MR_LOGI("reader", "start: path='%s'", path_.c_str());
 
   if (app_ && app_->font_manager())
@@ -1029,6 +1030,7 @@ bool ReaderScreen::next_page_() {
     if (chapter_idx_ + 1 < mrb_.chapter_count()) {
       load_chapter_(chapter_idx_ + 1);
       page_pos_ = PagePosition{0, 0};
+      page_turn_count_++;
       return true;
     }
     return false;
@@ -1047,6 +1049,7 @@ bool ReaderScreen::next_page_() {
     }
   }
   page_pos_ = next;
+  page_turn_count_++;
   return true;
 }
 
@@ -1084,11 +1087,12 @@ void ReaderScreen::save_position_() {
   FILE* f = std::fopen(pos_path_.c_str(), "w");
   if (!f)
     return;
-  std::fprintf(f, "%u %u %u %u %u %llu\n",
+  std::fprintf(f, "%u %u %u %u %u %llu %u\n",
                static_cast<unsigned>(chapter_idx_), static_cast<unsigned>(page_pos_.paragraph),
                static_cast<unsigned>(page_pos_.offset), static_cast<unsigned>(page_pos_.text_offset),
                static_cast<unsigned>(times_opened_),
-               static_cast<unsigned long long>(reading_ms_total_));
+               static_cast<unsigned long long>(reading_ms_total_),
+               static_cast<unsigned>(page_turn_count_));
   std::fclose(f);
 }
 
@@ -1120,9 +1124,9 @@ void ReaderScreen::load_position_() {
 
   if (!f)
     return;
-  unsigned ch = 0, para = 0, line = 0, to = 0, topen = 0;
+  unsigned ch = 0, para = 0, line = 0, to = 0, topen = 0, ptc = 0;
   unsigned long long rms = 0;
-  int scanned = std::fscanf(f, "%u %u %u %u %u %llu", &ch, &para, &line, &to, &topen, &rms);
+  int scanned = std::fscanf(f, "%u %u %u %u %u %llu %u", &ch, &para, &line, &to, &topen, &rms, &ptc);
   std::fclose(f);
   if (scanned >= 3) {
     saved_chapter_idx_ = ch;
@@ -1131,16 +1135,32 @@ void ReaderScreen::load_position_() {
       times_opened_ = static_cast<uint32_t>(topen);
     if (scanned >= 6)
       reading_ms_total_ = static_cast<uint64_t>(rms);
-    MR_LOGI("reader", "Loaded pos ch=%u para=%u line=%u to=%u opens=%u rms=%llu (scanned=%d)",
-            ch, para, line, to, topen, rms, scanned);
+    if (scanned >= 7)
+      page_turn_count_ = static_cast<uint32_t>(ptc);
+    MR_LOGI("reader", "Loaded pos ch=%u para=%u line=%u to=%u opens=%u rms=%llu ptc=%u (scanned=%d)",
+            ch, para, line, to, topen, rms, ptc, scanned);
     if (migrating) {
       FILE* fw = std::fopen(pos_path_.c_str(), "w");
       if (fw) {
-        std::fprintf(fw, "%u %u %u %u %u %llu\n", ch, para, line, to, topen, rms);
+        std::fprintf(fw, "%u %u %u %u %u %llu %u\n", ch, para, line, to, topen, rms, ptc);
         std::fclose(fw);
       }
     }
   }
+}
+
+uint64_t ReaderScreen::estimated_time_left_ms() const {
+  const uint64_t elapsed = reading_ms_total();
+  if (elapsed == 0) return 0;
+  const uint64_t total_chars = mrb_.total_char_count();
+  if (total_chars == 0) return 0;
+  uint64_t chars_read = 0;
+  for (size_t i = 0; i < chapter_idx_; ++i)
+    chars_read += mrb_.chapter_char_count(static_cast<uint16_t>(i));
+  chars_read += (chapter_src_ ? chapter_src_->char_before_para(page_pos_.paragraph) : 0) + page_pos_.text_offset;
+  if (chars_read == 0) return 0;
+  const uint64_t chars_left = total_chars > chars_read ? total_chars - chars_read : 0;
+  return (chars_left * elapsed) / chars_read;
 }
 
 }  // namespace microreader

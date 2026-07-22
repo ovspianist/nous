@@ -227,7 +227,7 @@ void BookIndex::update_read_time(std::string_view path, uint64_t ms, const std::
   ensure_loaded_(index_path);
   for (auto& e : entries_) {
     if (e.path.view(pool_) == path) {
-      e.read_time_ms += ms;
+      e.read_time_ms = ms;
       ++generation_;
       save(index_path);
       return;

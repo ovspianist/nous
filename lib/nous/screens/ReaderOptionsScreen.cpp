@@ -235,6 +235,9 @@ void ReaderOptionsScreen::on_start() {
 
   char tmp[40];
 
+  idx_stats_ = count();
+  add_item("Statistics");
+
   bool has_toc = toc_ && !toc_->entries.empty();
   const bool has_nav = has_toc || !page_links_.empty();
 
@@ -596,15 +599,9 @@ void ReaderOptionsScreen::on_select(int index) {
   if (index == idx_stats_) {
     if (app_) {
       auto* r = app_->reader();
-      uint64_t total_ms = r->reading_ms_total();
-      const std::string cur_path = r->get_path();
-      for (const auto& e : BookIndex::instance().entries()) {
-        if (e.path.view(BookIndex::instance().pool()) == cur_path) {
-          total_ms += e.read_time_ms;
-          break;
-        }
-      }
-      app_->stats_screen()->set_book_stats(r->book_title(), r->times_opened(), total_ms);
+      app_->stats_screen()->set_book_stats(
+          r->book_title(), r->times_opened(), r->reading_ms_total(),
+          r->progress_pct(), r->estimated_time_left_ms(), r->page_turn_count());
       app_->push_screen(ScreenId::Stats);
     }
     return;
