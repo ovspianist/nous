@@ -1,6 +1,7 @@
 #include "Application.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -495,12 +496,28 @@ IScreen* microreader::Application::screen_for_(ScreenId id) {
 void microreader::Application::save_settings_() {
   if (settings_path_.empty())
     return;
-  FILE* f = std::fopen(settings_path_.c_str(), "w");
-  if (!f)
-    return;
+
+  // Format first, then perform one unbuffered write. Picolibc's buffered
+  // stdio path allocates and frees a FAT write buffer; doing that immediately
+  // after the startup reader-sync scan can corrupt the small ESP32-C3 heap.
+  // A static buffer also keeps this function's stack usage bounded.
+  static std::array<char, 4096> output;
+  size_t output_size = 0;
+  bool output_valid = true;
+  auto append = [&](const char* format, auto... values) {
+    if (!output_valid)
+      return;
+    const size_t remaining = output.size() - output_size;
+    const int count = std::snprintf(output.data() + output_size, remaining, format, values...);
+    if (count < 0 || static_cast<size_t>(count) >= remaining) {
+      output_valid = false;
+      return;
+    }
+    output_size += static_cast<size_t>(count);
+  };
 
   // Version tag
-  std::fprintf(f, "v=1\n");
+  append("v=1\n");
 
   // Last screen / book — treat reader-is-anywhere-in-stack as "reader" so
   // shutting down from ReaderOptionsScreen still boots back into the reader.
@@ -509,72 +526,84 @@ void microreader::Application::save_settings_() {
   const bool reader_active = screen_mgr_.contains(reader);
 
   if (settings_active) {
-    std::fprintf(f, "screen=settings\n");
-    std::fprintf(f, "setting_sel=%d\n", settings_.selected_index());
+    append("screen=settings\n");
+    append("setting_sel=%d\n", settings_.selected_index());
   } else if (reader_active) {
-    std::fprintf(f, "screen=reader\n");
+    append("screen=reader\n");
   } else {
-    std::fprintf(f, "screen=menu\n");
+    append("screen=menu\n");
   }
 
   if (reader_active && reader->has_path() && reader->get_path().find("/.hidden/") == std::string::npos)
-    std::fprintf(f, "book_path=%s\n", reader->get_path().c_str());
+    append("book_path=%s\n", reader->get_path().c_str());
 
   // Last book-list selection: prefer the currently highlighted entry so
   // power-off while browsing still saves position; fall back to last opened.
   const std::string& sel =
       !menu_.current_book_path().empty() ? menu_.current_book_path() : menu_.last_selected_book_path();
   if (!sel.empty())
-    std::fprintf(f, "book_sel=%s\n", sel.c_str());
+    append("book_sel=%s\n", sel.c_str());
 
   // Reader display settings
   const ReaderSettings& rs = reader->reader_settings();
-  std::fprintf(f, "align_override=%u\n", static_cast<unsigned>(rs.align_override));
-  std::fprintf(f, "padding_h=%u\n", static_cast<unsigned>(rs.padding_h_idx));
-  std::fprintf(f, "padding_v=%u\n", static_cast<unsigned>(rs.padding_v_idx));
-  std::fprintf(f, "spacing_override=%u\n", static_cast<unsigned>(rs.spacing_override));
-  std::fprintf(f, "progress=%u\n", static_cast<unsigned>(rs.progress_style));
-  std::fprintf(f, "progress_scope=%u\n", static_cast<unsigned>(rs.progress_scope));
-  std::fprintf(f, "override_pub_fonts=%u\n", rs.override_publisher_fonts ? 1u : 0u);
-  std::fprintf(f, "hyphenation=%u\n", rs.hyphenation_enabled ? 1u : 0u);
-  std::fprintf(f, "font_size=%u\n", static_cast<unsigned>(rs.font_size_idx));
+  append("align_override=%u\n", static_cast<unsigned>(rs.align_override));
+  append("padding_h=%u\n", static_cast<unsigned>(rs.padding_h_idx));
+  append("padding_v=%u\n", static_cast<unsigned>(rs.padding_v_idx));
+  append("spacing_override=%u\n", static_cast<unsigned>(rs.spacing_override));
+  append("progress=%u\n", static_cast<unsigned>(rs.progress_style));
+  append("progress_scope=%u\n", static_cast<unsigned>(rs.progress_scope));
+  append("override_pub_fonts=%u\n", rs.override_publisher_fonts ? 1u : 0u);
+  append("hyphenation=%u\n", rs.hyphenation_enabled ? 1u : 0u);
+  append("font_size=%u\n", static_cast<unsigned>(rs.font_size_idx));
 
   // Menu list format
-  std::fprintf(f, "list_format=%u\n", static_cast<unsigned>(menu_.list_format()));
-  std::fprintf(f, "sort_order=%u\n", static_cast<unsigned>(menu_.sort_order()));
-  std::fprintf(f, "open_counter=%u\n", static_cast<unsigned>(open_counter_));
-  std::fprintf(f, "inv_menu=%u\n", invert_menu_buttons_ ? 1u : 0u);
-  std::fprintf(f, "inv_bpage=%u\n", invert_bottom_paging_ ? 1u : 0u);
-  std::fprintf(f, "inv_side=%u\n", invert_side_buttons_ ? 1u : 0u);
-  std::fprintf(f, "control_defaults_version=1\n");
-  std::fprintf(f, "button_power_short=%u\n", static_cast<unsigned>(power_short_action_));
-  std::fprintf(f, "button_power_long=%u\n", static_cast<unsigned>(power_long_action_));
+  append("list_format=%u\n", static_cast<unsigned>(menu_.list_format()));
+  append("sort_order=%u\n", static_cast<unsigned>(menu_.sort_order()));
+  append("open_counter=%u\n", static_cast<unsigned>(open_counter_));
+  append("inv_menu=%u\n", invert_menu_buttons_ ? 1u : 0u);
+  append("inv_bpage=%u\n", invert_bottom_paging_ ? 1u : 0u);
+  append("inv_side=%u\n", invert_side_buttons_ ? 1u : 0u);
+  append("control_defaults_version=1\n");
+  append("button_power_short=%u\n", static_cast<unsigned>(power_short_action_));
+  append("button_power_long=%u\n", static_cast<unsigned>(power_long_action_));
   for (uint8_t i = 0; i < 6; ++i)
-    std::fprintf(f, "button_long_%u=%u\n", static_cast<unsigned>(i), static_cast<unsigned>(button_long_actions_[i]));
-  std::fprintf(f, "rotate_display=%u\n", static_cast<unsigned>(rotate_display_));
-  std::fprintf(f, "rotate_reader=%u\n", static_cast<unsigned>(rotate_reader_));
-  std::fprintf(f, "menu_font_size=%d\n", menu_font_size_);
+    append("button_long_%u=%u\n", static_cast<unsigned>(i), static_cast<unsigned>(button_long_actions_[i]));
+  append("rotate_display=%u\n", static_cast<unsigned>(rotate_display_));
+  append("rotate_reader=%u\n", static_cast<unsigned>(rotate_reader_));
+  append("menu_font_size=%d\n", menu_font_size_);
 
   if (!custom_font_path_.empty())
-    std::fprintf(f, "custom_font=%s\n", custom_font_path_.c_str());
+    append("custom_font=%s\n", custom_font_path_.c_str());
   if (!installed_font_path_.empty())
-    std::fprintf(f, "inst_font=%s\n", installed_font_path_.c_str());
+    append("inst_font=%s\n", installed_font_path_.c_str());
   if (!sleep_image_path_.empty())
-    std::fprintf(f, "sleep_image=%s\n", sleep_image_path_.c_str());
-  std::fprintf(f, "sleep_image_idx=%d\n", sleep_image_idx_);
-  std::fprintf(f, "show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
-  std::fprintf(f, "show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
-  std::fprintf(f, "show_reader_images=%u\n", show_reader_images_ ? 1u : 0u);
-  std::fprintf(f, "battery_display=%u\n", static_cast<unsigned>(battery_display_));
-  std::fprintf(f, "list_align=%u\n", static_cast<unsigned>(list_align_));
-  std::fprintf(f, "sleep_timeout_min=%u\n", static_cast<unsigned>(sleep_timeout_min_));
-  std::fprintf(f, "menu_theme=%u\n", static_cast<unsigned>(menu_theme_));
-  std::fprintf(f, "sleep_text=%u\n", show_sleep_text_ ? 1u : 0u);
-  std::fprintf(f, "show_whats_new=%u\n", show_whats_new_on_update_ ? 1u : 0u);
+    append("sleep_image=%s\n", sleep_image_path_.c_str());
+  append("sleep_image_idx=%d\n", sleep_image_idx_);
+  append("show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
+  append("show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
+  append("show_reader_images=%u\n", show_reader_images_ ? 1u : 0u);
+  append("battery_display=%u\n", static_cast<unsigned>(battery_display_));
+  append("list_align=%u\n", static_cast<unsigned>(list_align_));
+  append("sleep_timeout_min=%u\n", static_cast<unsigned>(sleep_timeout_min_));
+  append("menu_theme=%u\n", static_cast<unsigned>(menu_theme_));
+  append("sleep_text=%u\n", show_sleep_text_ ? 1u : 0u);
+  append("show_whats_new=%u\n", show_whats_new_on_update_ ? 1u : 0u);
   if (!last_seen_version_.empty())
-    std::fprintf(f, "last_version=%s\n", last_seen_version_.c_str());
+    append("last_version=%s\n", last_seen_version_.c_str());
 
-  std::fclose(f);
+  if (!output_valid) {
+    MR_LOGI("app", "settings too large; keeping previous file");
+    return;
+  }
+
+  FILE* f = std::fopen(settings_path_.c_str(), "wb");
+  if (!f)
+    return;
+  std::setvbuf(f, nullptr, _IONBF, 0);
+  const bool wrote = std::fwrite(output.data(), 1, output_size, f) == output_size;
+  const bool closed = std::fclose(f) == 0;
+  if (!wrote || !closed)
+    MR_LOGI("app", "failed to persist settings");
 }
 
 void microreader::Application::set_menu_theme(uint8_t v) {
@@ -626,10 +655,12 @@ void microreader::Application::record_book_opened(const std::string& path) {
 void microreader::Application::synchronize_reader_recents() {
   if (reader_sync_recent_done_ || !data_dir_ || BookIndex::instance().entries().empty())
     return;
+  const uint32_t previous_open_counter = open_counter_;
   const std::string index_path = std::string(data_dir_) + "/book_index.dat";
   reader_sync::synchronize_recent_books(data_dir_, BookIndex::instance(), open_counter_, index_path);
   reader_sync_recent_done_ = true;
-  save_settings_();
+  if (open_counter_ != previous_open_counter)
+    save_settings_();
 }
 void Application::ensure_cover_bin(const std::string& epub_path) {
   if (!data_dir_) return;
