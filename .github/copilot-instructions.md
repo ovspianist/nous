@@ -1,5 +1,7 @@
 # Microreader2 — Project Summary
 
+Before resolving upstream conflicts or changing fork-specific behavior, read the concise owner decisions in [`FORK_PREFERENCES.md`](../FORK_PREFERENCES.md).
+
 E-ink ebook reader targeting **ESP32-C3 + SSD1677 e-paper** (800×480 physical, rotated 90° → **480×800 portrait**) with a **desktop SDL2 emulator** for rapid development.
 
 ## Architecture
