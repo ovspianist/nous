@@ -1,6 +1,7 @@
 #include "Application.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +35,8 @@ void Application::start(DrawBuffer& buf, IRuntime& runtime) {
   ticks_ = 0;
   uptime_ms_ = 0;
   buttons_ = ButtonState{};
+  for (auto& hold : button_holds_)
+    hold = ButtonHoldState{};
   started_ = true;
   running_ = true;
 
@@ -250,6 +253,151 @@ void Application::do_sleep_(DrawBuffer& buf) {
   running_ = false;
 }
 
+void Application::execute_button_action_(ButtonAction action, DrawBuffer& buf, IRuntime& runtime) {
+  switch (action) {
+    case ButtonAction::NextPage:
+      if (screen_mgr_.top() == &reader_ && reader_.next_page_and_render(buf))
+        buf.refresh();
+      return;
+    case ButtonAction::PreviousPage:
+      if (screen_mgr_.top() == &reader_ && reader_.previous_page_and_render(buf))
+        buf.refresh();
+      return;
+    case ButtonAction::Sleep:
+      do_sleep_(buf);
+      return;
+    case ButtonAction::RotateCCW:
+    case ButtonAction::RotateCW: {
+      const bool reader_context = screen_mgr_.contains(&reader_);
+      uint8_t& rotation = reader_context ? rotate_reader_ : rotate_display_;
+      // Settings advance clockwise through 90, 0, 270, 180 degrees.
+      const uint8_t step = action == ButtonAction::RotateCW ? 1u : 3u;
+      rotation = static_cast<uint8_t>((rotation + step) % 4u);
+      save_settings_();
+      buf.set_rotation(rotation_from_setting(rotation));
+
+      IScreen* top = screen_mgr_.top();
+      if (top == &reader_)
+        reader_.render_current_page(buf);
+      else if (top)
+        top->resume(buf, runtime);
+      buf.full_refresh();
+      return;
+    }
+    case ButtonAction::IncreaseFont:
+    case ButtonAction::DecreaseFont: {
+      if (!screen_mgr_.contains(&reader_))
+        return;
+      const int delta = action == ButtonAction::IncreaseFont ? 1 : -1;
+      if (!reader_.change_font_size(delta))
+        return;
+      save_settings_();
+
+      IScreen* top = screen_mgr_.top();
+      if (top == &reader_)
+        reader_.render_current_page(buf);
+      else if (top)
+        top->resume(buf, runtime);
+      buf.refresh();
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+ButtonState Application::process_button_actions_(const ButtonState& raw, uint32_t dt_ms, DrawBuffer& buf,
+                                                 IRuntime& runtime) {
+  ButtonState forwarded;
+  forwarded.current = raw.current;
+
+  auto append_press = [&](Button button) {
+    const uint8_t idx = static_cast<uint8_t>(button);
+    forwarded.pressed_latch |= static_cast<uint8_t>(1u << idx);
+    if (forwarded.press_history_count < ButtonState::kMaxPressHistory)
+      forwarded.press_history[forwarded.press_history_count++] = idx;
+  };
+
+  // Resolve buttons that were held across a previous frame. Their current
+  // state remains hidden from screens until the gesture becomes a tap or hold.
+  for (uint8_t idx = 0; idx < ButtonState::kButtonCount; ++idx) {
+    ButtonHoldState& hold = button_holds_[idx];
+    if (!hold.tracking)
+      continue;
+
+    const uint8_t mask = static_cast<uint8_t>(1u << idx);
+    forwarded.current &= static_cast<uint8_t>(~mask);
+    if ((raw.current & mask) != 0) {
+      if (hold.elapsed_ms < kButtonLongPressMs) {
+        const uint32_t remaining = kButtonLongPressMs - hold.elapsed_ms;
+        hold.elapsed_ms += dt_ms < remaining ? dt_ms : remaining;
+      }
+      if (!hold.action_fired && hold.elapsed_ms >= kButtonLongPressMs) {
+        hold.action_fired = true;
+        execute_button_action_(hold.action, buf, runtime);
+        if (!running_)
+          return forwarded;
+      }
+    } else {
+      if (!hold.action_fired) {
+        if (idx == static_cast<uint8_t>(Button::Power))
+          execute_button_action_(power_short_action_, buf, runtime);
+        else
+          append_press(static_cast<Button>(idx));
+      }
+      hold = ButtonHoldState{};
+      if (!running_)
+        return forwarded;
+    }
+  }
+
+  auto handle_press = [&](Button button) {
+    const uint8_t idx = static_cast<uint8_t>(button);
+    if (idx >= ButtonState::kButtonCount || button_holds_[idx].tracking)
+      return;
+
+    const bool is_power = button == Button::Power;
+    const ButtonAction hold_action = is_power ? power_long_action_ : button_long_action(button);
+    const uint8_t mask = static_cast<uint8_t>(1u << idx);
+    if ((is_power || hold_action != ButtonAction::None) && (raw.current & mask) != 0) {
+      ButtonHoldState& hold = button_holds_[idx];
+      hold.action = hold_action;
+      hold.elapsed_ms = 0;
+      hold.tracking = true;
+      hold.action_fired = false;
+      forwarded.current &= static_cast<uint8_t>(~mask);
+    } else if (is_power) {
+      // A complete tap can occur between two UI frames. It cannot become a
+      // hold, so execute its tap action immediately.
+      execute_button_action_(power_short_action_, buf, runtime);
+    } else {
+      append_press(button);
+    }
+  };
+
+  uint8_t seen_press_mask = 0;
+  for (uint8_t i = 0; i < raw.press_history_count; ++i) {
+    const uint8_t idx = raw.press_history[i];
+    if (idx >= ButtonState::kButtonCount)
+      continue;
+    seen_press_mask |= static_cast<uint8_t>(1u << idx);
+    handle_press(static_cast<Button>(idx));
+    if (!running_)
+      return forwarded;
+  }
+  // Backward compatibility for input sources that only populate pressed_latch.
+  const uint8_t latch_only = static_cast<uint8_t>(raw.pressed_latch & ~seen_press_mask);
+  for (uint8_t idx = 0; idx < ButtonState::kButtonCount; ++idx) {
+    if ((latch_only & static_cast<uint8_t>(1u << idx)) != 0) {
+      handle_press(static_cast<Button>(idx));
+      if (!running_)
+        return forwarded;
+    }
+  }
+
+  return forwarded;
+}
+
 void Application::update(const ButtonState& buttons, uint32_t dt_ms, DrawBuffer& buf, IRuntime& runtime) {
   if (!started_)
     start(buf, runtime);
@@ -258,10 +406,9 @@ void Application::update(const ButtonState& buttons, uint32_t dt_ms, DrawBuffer&
 
   ++ticks_;
   uptime_ms_ += dt_ms;
-  buttons_ = buttons;
 
   // Inactivity / auto-sleep tracking
-  if (buttons_.current != 0 || buttons_.pressed_latch != 0) {
+  if (buttons.current != 0 || buttons.pressed_latch != 0) {
     inactivity_ms_ = 0;
   } else {
     inactivity_ms_ += dt_ms;
@@ -275,10 +422,9 @@ void Application::update(const ButtonState& buttons, uint32_t dt_ms, DrawBuffer&
     }
   }
 
-  if (buttons_.is_pressed(Button::Power)) {
-    do_sleep_(buf);
+  buttons_ = process_button_actions_(buttons, dt_ms, buf, runtime);
+  if (!running_)
     return;
-  }
 
   IScreen* top = screen_mgr_.top();
   if (top) {
@@ -350,12 +496,28 @@ IScreen* microreader::Application::screen_for_(ScreenId id) {
 void microreader::Application::save_settings_() {
   if (settings_path_.empty())
     return;
-  FILE* f = std::fopen(settings_path_.c_str(), "w");
-  if (!f)
-    return;
+
+  // Format first, then perform one unbuffered write. Picolibc's buffered
+  // stdio path allocates and frees a FAT write buffer; doing that immediately
+  // after the startup reader-sync scan can corrupt the small ESP32-C3 heap.
+  // A static buffer also keeps this function's stack usage bounded.
+  static std::array<char, 4096> output;
+  size_t output_size = 0;
+  bool output_valid = true;
+  auto append = [&](const char* format, auto... values) {
+    if (!output_valid)
+      return;
+    const size_t remaining = output.size() - output_size;
+    const int count = std::snprintf(output.data() + output_size, remaining, format, values...);
+    if (count < 0 || static_cast<size_t>(count) >= remaining) {
+      output_valid = false;
+      return;
+    }
+    output_size += static_cast<size_t>(count);
+  };
 
   // Version tag
-  std::fprintf(f, "v=1\n");
+  append("v=1\n");
 
   // Last screen / book — treat reader-is-anywhere-in-stack as "reader" so
   // shutting down from ReaderOptionsScreen still boots back into the reader.
@@ -364,67 +526,84 @@ void microreader::Application::save_settings_() {
   const bool reader_active = screen_mgr_.contains(reader);
 
   if (settings_active) {
-    std::fprintf(f, "screen=settings\n");
-    std::fprintf(f, "setting_sel=%d\n", settings_.selected_index());
+    append("screen=settings\n");
+    append("setting_sel=%d\n", settings_.selected_index());
   } else if (reader_active) {
-    std::fprintf(f, "screen=reader\n");
+    append("screen=reader\n");
   } else {
-    std::fprintf(f, "screen=menu\n");
+    append("screen=menu\n");
   }
 
   if (reader_active && reader->has_path() && reader->get_path().find("/.hidden/") == std::string::npos)
-    std::fprintf(f, "book_path=%s\n", reader->get_path().c_str());
+    append("book_path=%s\n", reader->get_path().c_str());
 
   // Last book-list selection: prefer the currently highlighted entry so
   // power-off while browsing still saves position; fall back to last opened.
   const std::string& sel =
       !menu_.current_book_path().empty() ? menu_.current_book_path() : menu_.last_selected_book_path();
   if (!sel.empty())
-    std::fprintf(f, "book_sel=%s\n", sel.c_str());
+    append("book_sel=%s\n", sel.c_str());
 
   // Reader display settings
   const ReaderSettings& rs = reader->reader_settings();
-  std::fprintf(f, "align_override=%u\n", static_cast<unsigned>(rs.align_override));
-  std::fprintf(f, "padding_h=%u\n", static_cast<unsigned>(rs.padding_h_idx));
-  std::fprintf(f, "padding_v=%u\n", static_cast<unsigned>(rs.padding_v_idx));
-  std::fprintf(f, "spacing_override=%u\n", static_cast<unsigned>(rs.spacing_override));
-  std::fprintf(f, "progress=%u\n", static_cast<unsigned>(rs.progress_style));
-  std::fprintf(f, "progress_scope=%u\n", static_cast<unsigned>(rs.progress_scope));
-  std::fprintf(f, "override_pub_fonts=%u\n", rs.override_publisher_fonts ? 1u : 0u);
-  std::fprintf(f, "hyphenation=%u\n", rs.hyphenation_enabled ? 1u : 0u);
-  std::fprintf(f, "font_size=%u\n", static_cast<unsigned>(rs.font_size_idx));
+  append("align_override=%u\n", static_cast<unsigned>(rs.align_override));
+  append("padding_h=%u\n", static_cast<unsigned>(rs.padding_h_idx));
+  append("padding_v=%u\n", static_cast<unsigned>(rs.padding_v_idx));
+  append("spacing_override=%u\n", static_cast<unsigned>(rs.spacing_override));
+  append("progress=%u\n", static_cast<unsigned>(rs.progress_style));
+  append("progress_scope=%u\n", static_cast<unsigned>(rs.progress_scope));
+  append("override_pub_fonts=%u\n", rs.override_publisher_fonts ? 1u : 0u);
+  append("hyphenation=%u\n", rs.hyphenation_enabled ? 1u : 0u);
+  append("font_size=%u\n", static_cast<unsigned>(rs.font_size_idx));
 
   // Menu list format
-  std::fprintf(f, "list_format=%u\n", static_cast<unsigned>(menu_.list_format()));
-  std::fprintf(f, "sort_order=%u\n", static_cast<unsigned>(menu_.sort_order()));
-  std::fprintf(f, "open_counter=%u\n", static_cast<unsigned>(open_counter_));
-  std::fprintf(f, "inv_menu=%u\n", invert_menu_buttons_ ? 1u : 0u);
-  std::fprintf(f, "inv_bpage=%u\n", invert_bottom_paging_ ? 1u : 0u);
-  std::fprintf(f, "inv_side=%u\n", invert_side_buttons_ ? 1u : 0u);
-  std::fprintf(f, "rotate_display=%u\n", static_cast<unsigned>(rotate_display_));
-  std::fprintf(f, "rotate_reader=%u\n", static_cast<unsigned>(rotate_reader_));
-  std::fprintf(f, "menu_font_size=%d\n", menu_font_size_);
+  append("list_format=%u\n", static_cast<unsigned>(menu_.list_format()));
+  append("sort_order=%u\n", static_cast<unsigned>(menu_.sort_order()));
+  append("open_counter=%u\n", static_cast<unsigned>(open_counter_));
+  append("inv_menu=%u\n", invert_menu_buttons_ ? 1u : 0u);
+  append("inv_bpage=%u\n", invert_bottom_paging_ ? 1u : 0u);
+  append("inv_side=%u\n", invert_side_buttons_ ? 1u : 0u);
+  append("control_defaults_version=1\n");
+  append("button_power_short=%u\n", static_cast<unsigned>(power_short_action_));
+  append("button_power_long=%u\n", static_cast<unsigned>(power_long_action_));
+  for (uint8_t i = 0; i < 6; ++i)
+    append("button_long_%u=%u\n", static_cast<unsigned>(i), static_cast<unsigned>(button_long_actions_[i]));
+  append("rotate_display=%u\n", static_cast<unsigned>(rotate_display_));
+  append("rotate_reader=%u\n", static_cast<unsigned>(rotate_reader_));
+  append("menu_font_size=%d\n", menu_font_size_);
 
   if (!custom_font_path_.empty())
-    std::fprintf(f, "custom_font=%s\n", custom_font_path_.c_str());
+    append("custom_font=%s\n", custom_font_path_.c_str());
   if (!installed_font_path_.empty())
-    std::fprintf(f, "inst_font=%s\n", installed_font_path_.c_str());
+    append("inst_font=%s\n", installed_font_path_.c_str());
   if (!sleep_image_path_.empty())
-    std::fprintf(f, "sleep_image=%s\n", sleep_image_path_.c_str());
-  std::fprintf(f, "sleep_image_idx=%d\n", sleep_image_idx_);
-  std::fprintf(f, "show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
-  std::fprintf(f, "show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
-  std::fprintf(f, "show_reader_images=%u\n", show_reader_images_ ? 1u : 0u);
-  std::fprintf(f, "battery_display=%u\n", static_cast<unsigned>(battery_display_));
-  std::fprintf(f, "list_align=%u\n", static_cast<unsigned>(list_align_));
-  std::fprintf(f, "sleep_timeout_min=%u\n", static_cast<unsigned>(sleep_timeout_min_));
-  std::fprintf(f, "menu_theme=%u\n", static_cast<unsigned>(menu_theme_));
-  std::fprintf(f, "sleep_text=%u\n", show_sleep_text_ ? 1u : 0u);
-  std::fprintf(f, "show_whats_new=%u\n", show_whats_new_on_update_ ? 1u : 0u);
+    append("sleep_image=%s\n", sleep_image_path_.c_str());
+  append("sleep_image_idx=%d\n", sleep_image_idx_);
+  append("show_nav_arrows=%u\n", show_nav_arrows_ ? 1u : 0u);
+  append("show_conv_ind=%u\n", show_converted_indicator_ ? 1u : 0u);
+  append("show_reader_images=%u\n", show_reader_images_ ? 1u : 0u);
+  append("battery_display=%u\n", static_cast<unsigned>(battery_display_));
+  append("list_align=%u\n", static_cast<unsigned>(list_align_));
+  append("sleep_timeout_min=%u\n", static_cast<unsigned>(sleep_timeout_min_));
+  append("menu_theme=%u\n", static_cast<unsigned>(menu_theme_));
+  append("sleep_text=%u\n", show_sleep_text_ ? 1u : 0u);
+  append("show_whats_new=%u\n", show_whats_new_on_update_ ? 1u : 0u);
   if (!last_seen_version_.empty())
-    std::fprintf(f, "last_version=%s\n", last_seen_version_.c_str());
+    append("last_version=%s\n", last_seen_version_.c_str());
 
-  std::fclose(f);
+  if (!output_valid) {
+    MR_LOGI("app", "settings too large; keeping previous file");
+    return;
+  }
+
+  FILE* f = std::fopen(settings_path_.c_str(), "wb");
+  if (!f)
+    return;
+  std::setvbuf(f, nullptr, _IONBF, 0);
+  const bool wrote = std::fwrite(output.data(), 1, output_size, f) == output_size;
+  const bool closed = std::fclose(f) == 0;
+  if (!wrote || !closed)
+    MR_LOGI("app", "failed to persist settings");
 }
 
 void microreader::Application::set_menu_theme(uint8_t v) {
@@ -476,10 +655,12 @@ void microreader::Application::record_book_opened(const std::string& path) {
 void microreader::Application::synchronize_reader_recents() {
   if (reader_sync_recent_done_ || !data_dir_ || BookIndex::instance().entries().empty())
     return;
+  const uint32_t previous_open_counter = open_counter_;
   const std::string index_path = std::string(data_dir_) + "/book_index.dat";
   reader_sync::synchronize_recent_books(data_dir_, BookIndex::instance(), open_counter_, index_path);
   reader_sync_recent_done_ = true;
-  save_settings_();
+  if (open_counter_ != previous_open_counter)
+    save_settings_();
 }
 void Application::ensure_cover_bin(const std::string& epub_path) {
   if (!data_dir_) return;
@@ -511,6 +692,7 @@ void microreader::Application::load_settings_() {
   char line[512];
   std::string last_screen, last_book_path, book_sel;
   int setting_sel = 0;
+  bool has_current_control_defaults = false;
   ReaderSettings& rs = reader_.reader_settings();
 
   while (std::fgets(line, sizeof(line), f)) {
@@ -521,6 +703,13 @@ void microreader::Application::load_settings_() {
 
     char sval[512];
     unsigned uval = 0;
+    unsigned button_idx = 0;
+    unsigned button_action = 0;
+    if (std::sscanf(line, "button_long_%u=%u", &button_idx, &button_action) == 2 && button_idx < 6) {
+      button_long_actions_[button_idx] =
+          sanitize_button_action_(static_cast<ButtonAction>(button_action));
+      continue;
+    }
     if (std::sscanf(line, "screen=%511s", sval) == 1)
       last_screen = sval;
     else if (std::sscanf(line, "setting_sel=%d", &setting_sel) == 1)
@@ -565,6 +754,12 @@ void microreader::Application::load_settings_() {
       invert_bottom_paging_ = (uval != 0);
     else if (std::sscanf(line, "inv_side=%u", &uval) == 1)
       invert_side_buttons_ = (uval != 0);
+    else if (std::sscanf(line, "control_defaults_version=%u", &uval) == 1)
+      has_current_control_defaults = (uval >= 1);
+    else if (std::sscanf(line, "button_power_short=%u", &uval) == 1)
+      power_short_action_ = sanitize_button_action_(static_cast<ButtonAction>(uval));
+    else if (std::sscanf(line, "button_power_long=%u", &uval) == 1)
+      power_long_action_ = sanitize_button_action_(static_cast<ButtonAction>(uval));
     else if (std::sscanf(line, "rotate_display=%u", &uval) == 1)
       rotate_display_ = static_cast<uint8_t>(uval <= 3 ? uval : 0);
     else if (std::sscanf(line, "rotate_reader=%u", &uval) == 1)
@@ -601,6 +796,14 @@ void microreader::Application::load_settings_() {
       last_seen_version_ = sval;
   }
   std::fclose(f);
+
+  // One-time migration for settings written before the configurable button
+  // actions established these fork-specific physical directions.
+  if (!has_current_control_defaults) {
+    invert_menu_buttons_ = true;       // right = down
+    invert_bottom_paging_ = false;     // right = next page
+    invert_side_buttons_ = true;       // top = previous page
+  }
 
   // These toggles have been removed from Settings UI — always enforce.
   show_nav_arrows_ = true;

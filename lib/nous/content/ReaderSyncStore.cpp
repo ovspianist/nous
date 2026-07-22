@@ -34,6 +34,9 @@ constexpr char kSharedDirectoryName[] = ".nous-crossink-reader-sync";
 constexpr char kBooksDirectoryName[] = "books";
 constexpr char kCounterFileName[] = "counter-v1.bin";
 constexpr char kRecordSuffix[] = ".ncrs";
+constexpr size_t kRecordHashLength = 16;
+constexpr size_t kRecordSuffixLength = sizeof(kRecordSuffix) - 1;
+constexpr size_t kRecordFileNameLength = kRecordHashLength + kRecordSuffixLength;
 constexpr std::array<uint8_t, 8> kRecordMagic = {'N', 'C', 'R', 'S', 'Y', 'N', 'C', '1'};
 constexpr std::array<uint8_t, 8> kCounterMagic = {'N', 'C', 'R', 'S', 'E', 'Q', '0', '1'};
 constexpr uint8_t kRecordVersion = 1;
@@ -57,6 +60,21 @@ struct Record {
     Removed = 2,
   } recent_state = RecentState::None;
 };
+
+void reset_record(Record& record) {
+  // Preserve the string capacities while scanning multiple records. Besides
+  // reducing fragmentation on the ESP32-C3, this makes a failed read leave a
+  // completely empty record instead of partially retaining the previous one.
+  record.path.clear();
+  record.title.clear();
+  record.author.clear();
+  record.recent_sequence = 0;
+  record.position_sequence = 0;
+  record.intra_spine_ppm = 0;
+  record.spine_index = 0;
+  record.position_source = PositionSource::None;
+  record.recent_state = Record::RecentState::None;
+}
 
 uint16_t read_u16(const uint8_t* p) {
   return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
@@ -127,6 +145,16 @@ std::string local_path(const char* data_dir, std::string_view canonical) {
   return root;
 }
 
+bool regular_file_exists(const std::string& path) {
+#ifdef _WIN32
+  std::error_code ec;
+  return fs::is_regular_file(path, ec) && !ec;
+#else
+  struct stat info {};
+  return ::stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode);
+#endif
+}
+
 bool ensure_directories(const char* data_dir) {
   const std::string root = shared_root(data_dir);
   const std::string books = books_directory(data_dir);
@@ -138,9 +166,10 @@ bool ensure_directories(const char* data_dir) {
   return !ec;
 #else
   if (::mkdir(root.c_str(), 0775) != 0) {
-    FILE* probe = std::fopen(root.c_str(), "rb");
-    if (probe)
-      std::fclose(probe);
+    DIR* probe = opendir(root.c_str());
+    if (!probe)
+      return false;
+    closedir(probe);
   }
   if (::mkdir(books.c_str(), 0775) != 0) {
     DIR* probe = opendir(books.c_str());
@@ -166,6 +195,7 @@ bool read_exact(FILE* file, void* data, size_t size) {
 }
 
 bool read_record_file(const std::string& path, Record& record) {
+  reset_record(record);
   FILE* file = std::fopen(path.c_str(), "rb");
   if (!file)
     return false;
@@ -305,21 +335,39 @@ void for_each_record(const char* data_dir, Fn&& fn) {
     }
   }
 #else
+  // ESP-IDF's FAT VFS allocates both directory state and per-file fast-seek
+  // state from the same small heap. Do not keep a DIR open while repeatedly
+  // opening record files (or while callbacks inspect EPUB files): enumerate
+  // the fixed-size record names first, close the directory, then read them.
+  using RecordFileName = std::array<char, kRecordFileNameLength + 1>;
+  std::vector<RecordFileName> names;
+  names.reserve(32);
+
   DIR* directory = opendir(dir.c_str());
   if (!directory)
     return;
   while (dirent* entry = readdir(directory)) {
     const char* name = entry->d_name;
     const size_t name_len = std::strlen(name);
-    const size_t suffix_len = std::strlen(kRecordSuffix);
-    if (name_len <= suffix_len || std::strcmp(name + name_len - suffix_len, kRecordSuffix) != 0)
+    if (name_len != kRecordFileNameLength ||
+        std::strcmp(name + kRecordHashLength, kRecordSuffix) != 0)
       continue;
-    Record record;
-    const std::string path = dir + "/" + name;
+    RecordFileName stored{};
+    std::memcpy(stored.data(), name, name_len);
+    names.push_back(stored);
+  }
+  closedir(directory);
+
+  Record record;
+  std::string path;
+  path.reserve(dir.size() + 1 + kRecordFileNameLength);
+  for (const auto& name : names) {
+    path.assign(dir);
+    path.push_back('/');
+    path.append(name.data(), kRecordFileNameLength);
     if (read_record_file(path, record) && record_path(data_dir, record.path) == path)
       fn(record);
   }
-  closedir(directory);
 #endif
 }
 
@@ -468,12 +516,11 @@ bool synchronize_recent_books(const char* data_dir, BookIndex& index, uint32_t& 
       break;
     }
     if (!found && record.recent_state == Record::RecentState::Present && BookIndex::is_book_path(path.c_str())) {
-      FILE* book = std::fopen(path.c_str(), "rb");
-      if (book) {
-        std::fclose(book);
-        if (index.add_entry(path, record.title, record.author, record.recent_sequence, 0))
-          changed = true;
-      }
+      // Existence checks must not allocate a FAT fast-seek table for the whole
+      // EPUB merely to close it immediately.
+      if (regular_file_exists(path) &&
+          index.add_entry(path, record.title, record.author, record.recent_sequence, 0))
+        changed = true;
     }
   });
 
