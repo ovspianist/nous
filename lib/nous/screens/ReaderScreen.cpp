@@ -908,23 +908,61 @@ void ReaderScreen::draw_bottom_(DrawBuffer& buf, bool landscape) {
       snprintf(pct_str, sizeof(pct_str), "%d%%", pct);
       buf.draw_text_centered(W / 2, landscape ? H - 18 : H - 16, pct_str, true);
     } else {
-      // Progress bar: a thin filled line at the very bottom of the screen.
-      // Move it up 2px in landscape mode because of the screen edges being partially hidden.
-      const int kBarY = landscape ? H - 4 : H - 2;
+      // Progress bars are thin lines at the screen edges. Book progress keeps
+      // the original black elapsed fill. Chapter progress distinguishes the
+      // current page: earlier pages are dithered gray, the current page's span
+      // is solid black, and unread content remains white.
       constexpr int kBarH = 2;
-      const int bar_w = pct * W / 100;
-      buf.fill_rect(0, kBarY, bar_w, kBarH, false);         // filled portion (black)
-      buf.fill_rect(bar_w, kBarY, W - bar_w, kBarH, true);  // unfilled portion (white)
+      auto draw_progress_bar = [&](int y, ProgressScope scope) {
+        buf.fill_rect(0, y, W, kBarH, true);
 
-      // Mirror the other scope at the top edge: chapter below means book
-      // above, and book below means chapter above.
-      const int complementary_pct = std::clamp(
-          reader_settings_.progress_scope == ProgressScope::Chapter ? progress_pct() : chapter_progress_pct(), 0,
-          100);
+        if (scope == ProgressScope::Book || !chapter_src_) {
+          const int scope_pct =
+              std::clamp(scope == ProgressScope::Book ? progress_pct() : chapter_progress_pct(), 0, 100);
+          const int elapsed_w = scope_pct * W / 100;
+          buf.fill_rect(0, y, elapsed_w, kBarH, false);
+          return;
+        }
+
+        const uint64_t total_chars = chapter_src_->total_chars();
+        if (total_chars == 0)
+          return;
+
+        auto char_offset = [&](const PagePosition& pos) {
+          if (pos.paragraph >= chapter_src_->paragraph_count())
+            return total_chars;
+          return std::min<uint64_t>(
+              total_chars, chapter_src_->char_before_para(pos.paragraph) + static_cast<uint64_t>(pos.text_offset));
+        };
+
+        const uint64_t page_start_chars = char_offset(page_.start);
+        const uint64_t page_end_chars = page_.at_chapter_end ? total_chars : char_offset(page_.end);
+        const int page_start_x = static_cast<int>(page_start_chars * static_cast<uint64_t>(W) / total_chars);
+        int page_end_x = static_cast<int>(page_end_chars * static_cast<uint64_t>(W) / total_chars);
+
+        // Very short pages can round to less than one display pixel. Keep a
+        // one-pixel marker whenever there is still a current page to show.
+        if (page_end_x <= page_start_x && page_start_x < W)
+          page_end_x = page_start_x + 1;
+        page_end_x = std::min(page_end_x, W);
+
+        // A one-bit checker pattern reads as 50% gray without invoking the
+        // slower grayscale display mode or changing page-turn behavior.
+        for (int x = 0; x < page_start_x; ++x)
+          buf.set_pixel(x, y + (x & 1), false);
+
+        if (page_end_x > page_start_x)
+          buf.fill_rect(page_start_x, y, page_end_x - page_start_x, kBarH, false);
+      };
+
+      // Move the bottom bar up 2px in landscape because the screen edges are
+      // partially hidden. The complementary scope is always shown at the top.
+      const int bottom_bar_y = landscape ? H - 4 : H - 2;
+      draw_progress_bar(bottom_bar_y, reader_settings_.progress_scope);
       const int top_bar_y = landscape ? 2 : 0;
-      const int top_bar_w = complementary_pct * W / 100;
-      buf.fill_rect(0, top_bar_y, top_bar_w, kBarH, false);
-      buf.fill_rect(top_bar_w, top_bar_y, W - top_bar_w, kBarH, true);
+      const ProgressScope top_scope =
+          reader_settings_.progress_scope == ProgressScope::Chapter ? ProgressScope::Book : ProgressScope::Chapter;
+      draw_progress_bar(top_bar_y, top_scope);
     }
   }
 
