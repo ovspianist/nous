@@ -31,7 +31,9 @@ namespace microreader {
 // ---------------------------------------------------------------------------
 
 static constexpr uint8_t kMrbMagic[4] = {'M', 'R', 'B', '1'};
-static constexpr uint16_t kMrbVersion = 11;  // v11: large paragraphs split at conversion time (≤4KB text each)
+// v12 keeps the v11 layout but invalidates converted books so CSS-resolved
+// paragraph metadata is rebuilt with adjacent-sibling selector support.
+static constexpr uint16_t kMrbVersion = 12;
 
 // ---------------------------------------------------------------------------
 // Header (32 bytes, fixed)

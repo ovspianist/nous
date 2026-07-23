@@ -156,16 +156,111 @@ struct CssSheets {
 
   bool empty() const { return n == 0; }
 
+  bool has_adjacent_sibling_rules() const {
+    for (size_t i = 0; i < n; ++i) {
+      if (ptrs[i]->has_adjacent_sibling_rules())
+        return true;
+    }
+    return false;
+  }
+
   const CssConfig& config_or(const CssConfig& fallback) const {
     return n > 0 ? ptrs[0]->config() : fallback;
   }
 
-  CssRule get(const char* el, size_t el_len, const char* id, size_t id_len, const char* cls, size_t cls_len) const {
+  CssRule get(const char* el, size_t el_len, const char* id, size_t id_len, const char* cls, size_t cls_len,
+              const CssElementView* previous_sibling = nullptr) const {
     CssRule r;
     for (size_t i = 0; i < n; ++i)
-      r = r + ptrs[i]->get(el, el_len, id, id_len, cls, cls_len);
+      r = r + ptrs[i]->get(el, el_len, id, id_len, cls, cls_len, previous_sibling);
     return r;
   }
+};
+
+// Tracks just enough DOM context to match adjacent-sibling selectors while
+// streaming XHTML. It is disabled unless one of the chapter's stylesheets
+// contains such a selector, avoiding allocations for ordinary books.
+class AdjacentSiblingTracker {
+ public:
+  explicit AdjacentSiblingTracker(bool enabled) : enabled_(enabled) {}
+
+  bool begin_element(size_t depth, XmlStringView element, XmlStringView id, XmlStringView classes,
+                     CssElementView& previous_sibling) {
+    if (!enabled_)
+      return false;
+
+    ensure_depth_(depth);
+    const bool has_previous = last_siblings_[depth].valid;
+    if (has_previous)
+      previous_sibling = last_siblings_[depth].view();
+
+    open_elements_[depth].assign(element, id, classes);
+    // The new element is a new parent; it starts with no prior child.
+    last_siblings_[depth + 1].clear();
+    return has_previous;
+  }
+
+  // Finish the innermost element when parser_depth is the number of currently
+  // open elements (before BodyParser decrements its depth).
+  void end_element(size_t parser_depth) {
+    if (!enabled_ || parser_depth == 0)
+      return;
+    finish_at_depth_(parser_depth - 1);
+  }
+
+  // Used when a display:none element is consumed wholesale before BodyParser
+  // increments its depth.
+  void finish_unentered_element(size_t depth) {
+    if (enabled_)
+      finish_at_depth_(depth);
+  }
+
+ private:
+  struct Element {
+    std::string element;
+    std::string id;
+    std::string classes;
+    bool valid = false;
+
+    void assign(XmlStringView el, XmlStringView id_view, XmlStringView class_view) {
+      element.assign(el.data ? el.data : "", el.length);
+      id.assign(id_view.data ? id_view.data : "", id_view.length);
+      classes.assign(class_view.data ? class_view.data : "", class_view.length);
+      valid = true;
+    }
+
+    void clear() {
+      element.clear();
+      id.clear();
+      classes.clear();
+      valid = false;
+    }
+
+    CssElementView view() const {
+      return {element.data(), element.size(), id.empty() ? nullptr : id.data(), id.size(),
+              classes.empty() ? nullptr : classes.data(), classes.size()};
+    }
+  };
+
+  void ensure_depth_(size_t depth) {
+    const size_t needed = depth + 2;
+    if (open_elements_.size() < needed)
+      open_elements_.resize(needed);
+    if (last_siblings_.size() < needed)
+      last_siblings_.resize(needed);
+  }
+
+  void finish_at_depth_(size_t depth) {
+    ensure_depth_(depth);
+    if (!open_elements_[depth].valid)
+      return;
+    last_siblings_[depth] = std::move(open_elements_[depth]);
+    open_elements_[depth] = Element{};
+  }
+
+  bool enabled_ = false;
+  std::vector<Element> open_elements_;
+  std::vector<Element> last_siblings_;
 };
 
 // ---------------------------------------------------------------------------
@@ -1464,6 +1559,8 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
   }
 
   const CssStylesheet* effective_inline = inline_css ? inline_css : &parsed_inline_css;
+  AdjacentSiblingTracker sibling_tracker(effective_inline->has_adjacent_sibling_rules() ||
+                                          eff_ext.has_adjacent_sibling_rules());
 
 #ifdef ESP_PLATFORM
   head_us = esp_timer_get_time() - head_t0;
@@ -1543,6 +1640,13 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
 #endif
 
     if (ev.type == XmlEventType::StartElement) {
+      const auto sibling_id_sv = ev.attrs.get("id");
+      const auto sibling_class_sv = ev.attrs.get("class");
+      CssElementView previous_sibling;
+      const bool has_previous_sibling =
+          sibling_tracker.begin_element(parser.depth, ev.name, sibling_id_sv, sibling_class_sv, previous_sibling);
+      const CssElementView* previous_sibling_ptr = has_previous_sibling ? &previous_sibling : nullptr;
+
       if (sv_eq(ev.name, "img") || sv_eq(ev.name, "image")) {
         const char* attr = sv_eq(ev.name, "img") ? "src" : "xlink:href";
         auto src = sv_to_string(ev.attrs.get(attr));
@@ -1594,8 +1698,10 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
         const char* hr_id_p = hr_id_sv.data ? hr_id_sv.data : nullptr;
         const char* hr_cls_p = hr_class_sv.data ? hr_class_sv.data : nullptr;
         CssRule hr_style =
-            hr_inline + effective_inline->get("hr", 2, hr_id_p, hr_id_sv.length, hr_cls_p, hr_class_sv.length) +
-            eff_ext.get("hr", 2, hr_id_p, hr_id_sv.length, hr_cls_p, hr_class_sv.length);
+            hr_inline +
+            effective_inline->get("hr", 2, hr_id_p, hr_id_sv.length, hr_cls_p, hr_class_sv.length,
+                                  previous_sibling_ptr) +
+            eff_ext.get("hr", 2, hr_id_p, hr_id_sv.length, hr_cls_p, hr_class_sv.length, previous_sibling_ptr);
         std::optional<uint8_t> hr_width;
         if (hr_style.has_width_pct_)
           hr_width = hr_style.width_pct;
@@ -1643,8 +1749,10 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
 #ifdef ESP_PLATFORM
       int64_t css_t0 = esp_timer_get_time();
 #endif
-      CssRule style = inline_rule + effective_inline->get(el_p, el_len, id_p, id_len, cls_p, cls_len) +
-                      eff_ext.get(el_p, el_len, id_p, id_len, cls_p, cls_len);
+      CssRule style =
+          inline_rule +
+          effective_inline->get(el_p, el_len, id_p, id_len, cls_p, cls_len, previous_sibling_ptr) +
+          eff_ext.get(el_p, el_len, id_p, id_len, cls_p, cls_len, previous_sibling_ptr);
 #ifdef ESP_PLATFORM
       css_us += esp_timer_get_time() - css_t0;
 #endif
@@ -1697,6 +1805,7 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
               break;
           }
         }
+        sibling_tracker.finish_unentered_element(parser.depth);
         continue;
       }
 
@@ -1883,6 +1992,7 @@ static EpubError parse_xhtml_events(XmlReader& reader, const CssStylesheet* inli
         parser.flush_run();
       }
 
+      sibling_tracker.end_element(parser.depth);
       if (parser.depth > 0)
         parser.depth--;
 

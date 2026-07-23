@@ -127,6 +127,16 @@ CssRule CssRule::parse(const char* decl, size_t length, const CssConfig& config)
 
       std::string key = s.substr(key_start, key_end - key_start);
       std::string value = s.substr(val_start, val_end - val_start);
+      bool important = false;
+      static constexpr const char* kImportant = "!important";
+      static constexpr size_t kImportantLen = 10;
+      if (value.size() >= kImportantLen &&
+          value.compare(value.size() - kImportantLen, kImportantLen, kImportant) == 0) {
+        important = true;
+        value.resize(value.size() - kImportantLen);
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))
+          value.pop_back();
+      }
 
       if (key == "text-align") {
         if (value == "start" || value == "left")
@@ -150,7 +160,7 @@ CssRule CssRule::parse(const char* decl, size_t length, const CssConfig& config)
       } else if (key == "text-indent") {
         auto len = parse_css_length(value, config.glyph_width, config.content_width);
         if (len.has_value())
-          rule.set_indent(static_cast<int16_t>(*len));
+          rule.set_indent(static_cast<int16_t>(*len), important);
       } else if (key == "margin-left") {
         auto len = parse_css_length(value, config.glyph_width, config.content_width);
         if (len.has_value() && *len > 0)
@@ -396,10 +406,10 @@ CssRule CssRule::operator+(const CssRule& rhs) const {
     result.set_bold(rhs.bold);
   else if (has_bold_)
     result.set_bold(bold);
-  if (rhs.has_indent_)
-    result.set_indent(rhs.indent);
+  if (rhs.has_indent_ && (!has_indent_ || rhs.indent_important_ || !indent_important_))
+    result.set_indent(rhs.indent, rhs.indent_important_);
   else if (has_indent_)
-    result.set_indent(indent);
+    result.set_indent(indent, indent_important_);
   if (rhs.has_font_size_pct_)
     result.set_font_size_pct(rhs.font_size_pct);
   else if (has_font_size_pct_)
@@ -474,84 +484,93 @@ CssRule CssRule::operator+(const CssRule& rhs) const {
 
 bool CssStylesheet::Selector::try_parse(const char* s, size_t len, Selector& out) {
   out = {};
-  // Trim
-  while (len > 0 && std::isspace(static_cast<unsigned char>(s[0]))) {
-    ++s;
-    --len;
-  }
-  while (len > 0 && std::isspace(static_cast<unsigned char>(s[len - 1])))
-    --len;
+  auto trim = [](const char*& begin, size_t& length) {
+    while (length > 0 && std::isspace(static_cast<unsigned char>(*begin))) {
+      ++begin;
+      --length;
+    }
+    while (length > 0 && std::isspace(static_cast<unsigned char>(begin[length - 1])))
+      --length;
+  };
 
+  auto parse_compound = [&](const char* begin, size_t length, Compound& compound) {
+    trim(begin, length);
+    if (length == 0)
+      return false;
+
+    // Compound selectors may contain an element, classes, and an id, but no
+    // combinators, pseudo selectors, attributes, or internal whitespace.
+    for (size_t i = 0; i < length; ++i) {
+      const char c = begin[i];
+      if (std::isspace(static_cast<unsigned char>(c)) || c == '>' || c == '+' || c == '~' || c == ':' || c == '[' ||
+          c == ']')
+        return false;
+    }
+
+    char kind = 'e';
+    std::string current;
+    for (size_t i = 0; i < length; ++i) {
+      const char c = begin[i];
+      if (c == '.' || c == '#') {
+        if (!current.empty()) {
+          if (kind == 'e')
+            compound.element = std::move(current);
+          else if (kind == '.')
+            compound.classes.push_back(std::move(current));
+          else
+            compound.id = std::move(current);
+        }
+        current.clear();
+        kind = c;
+      } else {
+        current += c;
+      }
+    }
+    if (!current.empty()) {
+      if (kind == 'e')
+        compound.element = std::move(current);
+      else if (kind == '.')
+        compound.classes.push_back(std::move(current));
+      else
+        compound.id = std::move(current);
+    }
+    return !compound.element.empty() || !compound.id.empty() || !compound.classes.empty();
+  };
+
+  trim(s, len);
   if (len == 0)
     return false;
 
-  // Reject complex selectors (contain spaces, >, +, ~, :, [)
+  size_t plus_pos = std::string::npos;
   for (size_t i = 0; i < len; ++i) {
-    char c = s[i];
-    if (std::isspace(static_cast<unsigned char>(c)) || c == '>' || c == '+' || c == '~' || c == ':' || c == '[')
-      return false;
-  }
-
-  // Parse compound selector: element.class#id etc
-  char kind = 'e';
-  std::string current;
-
-  for (size_t i = 0; i < len; ++i) {
-    char c = s[i];
-    if (c == '.' || c == '#') {
-      if (!current.empty()) {
-        if (kind == 'e')
-          out.element = std::move(current);
-        else if (kind == '.')
-          out.classes.push_back(std::move(current));
-        else if (kind == '#')
-          out.id = std::move(current);
-      }
-      current.clear();
-      kind = c;
-    } else {
-      current += c;
+    if (s[i] == '+') {
+      if (plus_pos != std::string::npos)
+        return false;  // only one adjacent-sibling combinator is supported
+      plus_pos = i;
     }
   }
-  if (!current.empty()) {
-    if (kind == 'e')
-      out.element = std::move(current);
-    else if (kind == '.')
-      out.classes.push_back(std::move(current));
-    else if (kind == '#')
-      out.id = std::move(current);
-  }
 
-  return !out.element.empty() || !out.id.empty() || !out.classes.empty();
-}
+  if (plus_pos == std::string::npos)
+    return parse_compound(s, len, out.subject);
 
-bool CssStylesheet::Selector::matches(const char* element, const char* id,
-                                      const std::vector<std::string>& classes) const {
-  if (!this->element.empty() && (element == nullptr || this->element != element))
+  auto adjacent_sibling = std::make_unique<Compound>();
+  if (!parse_compound(s, plus_pos, *adjacent_sibling) ||
+      !parse_compound(s + plus_pos + 1, len - plus_pos - 1, out.subject))
     return false;
-  if (!this->id.empty()) {
-    if (id == nullptr || this->id != id)
-      return false;
-  }
-  for (const auto& cls : this->classes) {
-    bool found = false;
-    for (const auto& c : classes) {
-      if (c == cls) {
-        found = true;
-        break;
-      }
-    }
-    if (!found)
-      return false;
-  }
+
+  out.adjacent_sibling = std::move(adjacent_sibling);
   return true;
 }
 
-uint32_t CssStylesheet::Selector::specificity() const {
-  uint32_t ids = id.empty() ? 0 : 1;
-  uint32_t cls = static_cast<uint32_t>(classes.size());
-  uint32_t elems = element.empty() ? 0 : 1;
+uint32_t CssStylesheet::Selector::Compound::specificity() const {
+  const uint32_t ids = id.empty() ? 0 : 1;
+  const uint32_t cls = static_cast<uint32_t>(classes.size());
+  const uint32_t elems = element.empty() ? 0 : 1;
   return (ids << 16) | (cls << 8) | elems;
+}
+
+uint32_t CssStylesheet::Selector::specificity() const {
+  return subject.specificity() + (adjacent_sibling ? adjacent_sibling->specificity() : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -677,6 +696,8 @@ void CssStylesheet::extend_from_mut_sheet(char* css, size_t length) {
 
           Selector sel;
           if (Selector::try_parse(selectors.c_str() + sp, comma - sp, sel)) {
+            if (sel.has_adjacent_sibling())
+              has_adjacent_sibling_rules_ = true;
             rules_.emplace_back(std::move(sel), rule);
           }
           sp = comma + 1;
@@ -686,41 +707,6 @@ void CssStylesheet::extend_from_mut_sheet(char* css, size_t length) {
 
     pos = end_pos + 1;
   }
-}
-
-// Check if a whitespace-separated class string contains a specific class.
-static bool class_list_contains(const char* cls, const std::string& target) {
-  if (!cls || target.empty())
-    return false;
-  size_t tlen = target.size();
-  const char* p = cls;
-  while (*p) {
-    while (*p && std::isspace(static_cast<unsigned char>(*p)))
-      ++p;
-    const char* start = p;
-    while (*p && !std::isspace(static_cast<unsigned char>(*p)))
-      ++p;
-    size_t len = static_cast<size_t>(p - start);
-    if (len == tlen && std::memcmp(start, target.c_str(), len) == 0)
-      return true;
-  }
-  return false;
-}
-
-// Match a selector against element/id/class without allocating vectors.
-static bool selector_matches_raw(const CssStylesheet::Selector& sel, const char* element, const char* id,
-                                 const char* cls) {
-  if (!sel.element.empty() && (element == nullptr || sel.element != element))
-    return false;
-  if (!sel.id.empty()) {
-    if (id == nullptr || sel.id != id)
-      return false;
-  }
-  for (const auto& c : sel.classes) {
-    if (!class_list_contains(cls, c))
-      return false;
-  }
-  return true;
 }
 
 // Length-based class list check: does whitespace-separated cls contain target?
@@ -743,39 +729,55 @@ static bool class_list_contains_n(const char* cls, size_t cls_len, const std::st
   return false;
 }
 
-static bool selector_matches_n(const CssStylesheet::Selector& sel, const char* element, size_t element_len,
-                               const char* id, size_t id_len, const char* cls, size_t cls_len) {
-  if (!sel.element.empty()) {
-    if (element_len != sel.element.size() || std::memcmp(element, sel.element.c_str(), element_len) != 0)
+static bool compound_matches_n(const CssStylesheet::Selector::Compound& compound, const char* element,
+                               size_t element_len, const char* id, size_t id_len, const char* cls, size_t cls_len) {
+  if (!compound.element.empty()) {
+    if (!element || element_len != compound.element.size() ||
+        std::memcmp(element, compound.element.c_str(), element_len) != 0)
       return false;
   }
-  if (!sel.id.empty()) {
-    if (id_len != sel.id.size() || std::memcmp(id, sel.id.c_str(), id_len) != 0)
+  if (!compound.id.empty()) {
+    if (!id || id_len != compound.id.size() || std::memcmp(id, compound.id.c_str(), id_len) != 0)
       return false;
   }
-  for (const auto& c : sel.classes) {
+  for (const auto& c : compound.classes) {
     if (!class_list_contains_n(cls, cls_len, c))
       return false;
   }
   return true;
 }
 
+static bool selector_matches_n(const CssStylesheet::Selector& selector, const char* element, size_t element_len,
+                               const char* id, size_t id_len, const char* cls, size_t cls_len,
+                               const CssElementView* previous_sibling) {
+  if (!compound_matches_n(selector.subject, element, element_len, id, id_len, cls, cls_len))
+    return false;
+  if (!selector.has_adjacent_sibling())
+    return true;
+  if (!previous_sibling)
+    return false;
+  return compound_matches_n(*selector.adjacent_sibling, previous_sibling->element, previous_sibling->element_len,
+                            previous_sibling->id, previous_sibling->id_len, previous_sibling->classes,
+                            previous_sibling->classes_len);
+}
+
 // ---------------------------------------------------------------------------
 // get() overloads: scan all rules, match selectors, sort, merge.
 // ---------------------------------------------------------------------------
 
-CssRule CssStylesheet::get(const char* element, const char* id, const char* cls) const {
+CssRule CssStylesheet::get(const char* element, const char* id, const char* cls,
+                           const CssElementView* previous_sibling) const {
   if (rules_.empty())
     return {};
 
   size_t el_len = element ? std::strlen(element) : 0;
   size_t id_len = id ? std::strlen(id) : 0;
   size_t cls_len = cls ? std::strlen(cls) : 0;
-  return get(element ? element : "", el_len, id, id_len, cls, cls_len);
+  return get(element ? element : "", el_len, id, id_len, cls, cls_len, previous_sibling);
 }
 
 CssRule CssStylesheet::get(const char* element, size_t element_len, const char* id, size_t id_len, const char* cls,
-                           size_t cls_len) const {
+                           size_t cls_len, const CssElementView* previous_sibling) const {
   if (rules_.empty())
     return {};
   struct Match {
@@ -789,7 +791,7 @@ CssRule CssStylesheet::get(const char* element, size_t element_len, const char* 
   std::vector<Match> heap_matches;
 
   for (size_t i = 0; i < rules_.size(); ++i) {
-    if (selector_matches_n(rules_[i].first, element, element_len, id, id_len, cls, cls_len)) {
+    if (selector_matches_n(rules_[i].first, element, element_len, id, id_len, cls, cls_len, previous_sibling)) {
       Match m{rules_[i].first.specificity(), i, &rules_[i].second};
       if (!used_heap && match_count < 8) {
         inline_buf[match_count++] = m;

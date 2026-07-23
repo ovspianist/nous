@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,6 +19,17 @@ struct CssConfig {
   uint16_t glyph_width = 12;     // pixels per em (font glyph width)
   uint16_t content_width = 440;  // content area width for % calculations
   uint16_t max_margin_pct = 15;  // max combined margin-left+right as % of content_width
+};
+
+// Non-owning element metadata used for selector matching. The pointed-to
+// strings only need to remain valid for the duration of CssStylesheet::get().
+struct CssElementView {
+  const char* element = nullptr;
+  size_t element_len = 0;
+  const char* id = nullptr;
+  size_t id_len = 0;
+  const char* classes = nullptr;
+  size_t classes_len = 0;
 };
 
 // A CSS rule: the style properties we care about for e-book rendering.
@@ -66,6 +79,7 @@ struct CssRule {
   bool has_font_variant_small_caps_ : 1;
   bool has_border_top_ : 1;
   bool has_width_pct_ : 1;
+  bool indent_important_ : 1;
 
   CssRule() {
     alignment = Alignment::Start;
@@ -101,6 +115,7 @@ struct CssRule {
     has_font_variant_small_caps_ = false;
     has_border_top_ = false;
     has_width_pct_ = false;
+    indent_important_ = false;
   }
 
   // Provide minimal std::optional-like interface for getters
@@ -267,9 +282,10 @@ struct CssRule {
     has_width_pct_ = true;
   }
 
-  void set_indent(int16_t v) {
+  void set_indent(int16_t v, bool important = false) {
     indent = v;
     has_indent_ = true;
+    indent_important_ = important;
   }
   void set_font_size_pct(uint8_t v) {
     font_size_pct = v;
@@ -334,30 +350,45 @@ class CssStylesheet {
     extend_from_sheet(s.c_str(), s.size());
   }
 
-  // Look up cascaded style for an element.
-  CssRule get(const char* element, const char* id, const char* cls) const;
+  // Look up cascaded style for an element. previous_sibling is optional and
+  // enables matching simple adjacent-sibling selectors such as "p + p".
+  CssRule get(const char* element, const char* id, const char* cls,
+              const CssElementView* previous_sibling = nullptr) const;
   // Overload accepting lengths (avoids null-termination requirement).
   CssRule get(const char* element, size_t element_len, const char* id, size_t id_len, const char* cls,
-              size_t cls_len) const;
+              size_t cls_len, const CssElementView* previous_sibling = nullptr) const;
 
   size_t rule_count() const {
     return rules_.size();
   }
+  bool has_adjacent_sibling_rules() const {
+    return has_adjacent_sibling_rules_;
+  }
 
   // Internal selector type (public for inline matching in .cpp)
   struct Selector {
-    std::string element;
-    std::string id;
-    std::vector<std::string> classes;
+    struct Compound {
+      std::string element;
+      std::string id;
+      std::vector<std::string> classes;
+
+      uint32_t specificity() const;
+    };
+
+    Compound subject;
+    std::unique_ptr<Compound> adjacent_sibling;
 
     static bool try_parse(const char* s, size_t len, Selector& out);
-    bool matches(const char* element, const char* id, const std::vector<std::string>& classes) const;
     uint32_t specificity() const;
+    bool has_adjacent_sibling() const {
+      return adjacent_sibling != nullptr;
+    }
   };
 
  private:
   CssConfig config_;
   std::deque<std::pair<Selector, CssRule>> rules_;
+  bool has_adjacent_sibling_rules_ = false;
 
   static std::string filter_comments(const char* css, size_t length);
 };
