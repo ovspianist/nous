@@ -2,6 +2,12 @@
 
 This is a personal fork of [`unitreign/nous`](https://github.com/unitreign/nous). When resolving upstream conflicts, preserve the choices below unless the owner explicitly changes them. Accept unrelated upstream improvements, and prefer an upstream setting or implementation when it can preserve the same behavior cleanly.
 
+## Repository policy
+
+- Keep all changes and pull requests in [`ovspianist/nous`](https://github.com/ovspianist/nous).
+- Unless the owner explicitly says otherwise for a specific action, every PR must target `ovspianist/nous:main`.
+- Treat `unitreign/nous` and other upstream remotes as fetch/reference sources only; never open or retarget a PR to them.
+
 ## Interface and reading
 
 - Use the legacy **Terminus** profile for UI text (menus, settings, and book lists). Keep **Inter** available behind the existing profile switch, but do not make it the default. This preference does not apply to book-reading fonts.
