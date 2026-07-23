@@ -901,58 +901,64 @@ void ReaderScreen::draw_bottom_(DrawBuffer& buf, bool landscape) {
   const int H = buf.height();
 
   if (mrb_.paragraph_count() > 0 && reader_settings_.progress_style != ProgressStyle::None) {
-    const int pct = std::clamp(
-        reader_settings_.progress_scope == ProgressScope::Chapter ? chapter_progress_pct() : progress_pct(), 0, 100);
     if (reader_settings_.progress_style == ProgressStyle::Percentage) {
+      const int pct = std::clamp(
+          reader_settings_.progress_scope == ProgressScope::Chapter ? chapter_progress_pct() : progress_pct(), 0, 100);
       char pct_str[8];
       snprintf(pct_str, sizeof(pct_str), "%d%%", pct);
       buf.draw_text_centered(W / 2, landscape ? H - 18 : H - 16, pct_str, true);
     } else {
-      // Progress bars are thin lines at the screen edges. Book progress keeps
-      // the original black elapsed fill. Chapter progress distinguishes the
-      // current page: earlier pages are dithered gray, the current page's span
-      // is solid black, and unread content remains white.
+      // Progress bars are thin lines at the screen edges. Book progress shows
+      // earlier chapters in gray and the current chapter in black. Chapter
+      // progress does the same for earlier pages and the current page.
       constexpr int kBarH = 2;
       auto draw_progress_bar = [&](int y, ProgressScope scope) {
         buf.fill_rect(0, y, W, kBarH, true);
 
-        if (scope == ProgressScope::Book || !chapter_src_) {
-          const int scope_pct =
-              std::clamp(scope == ProgressScope::Book ? progress_pct() : chapter_progress_pct(), 0, 100);
-          const int elapsed_w = scope_pct * W / 100;
-          buf.fill_rect(0, y, elapsed_w, kBarH, false);
-          return;
+        uint64_t total_chars = 0;
+        uint64_t current_start_chars = 0;
+        uint64_t current_end_chars = 0;
+
+        if (scope == ProgressScope::Book) {
+          total_chars = mrb_.total_char_count();
+          for (size_t i = 0; i < chapter_idx_; ++i)
+            current_start_chars += mrb_.chapter_char_count(static_cast<uint16_t>(i));
+          current_start_chars = std::min(current_start_chars, total_chars);
+          current_end_chars =
+              std::min(total_chars, current_start_chars +
+                                        mrb_.chapter_char_count(static_cast<uint16_t>(chapter_idx_)));
+        } else if (chapter_src_) {
+          total_chars = chapter_src_->total_chars();
+          auto char_offset = [&](const PagePosition& pos) {
+            if (pos.paragraph >= chapter_src_->paragraph_count())
+              return total_chars;
+            return std::min<uint64_t>(
+                total_chars, chapter_src_->char_before_para(pos.paragraph) + static_cast<uint64_t>(pos.text_offset));
+          };
+          current_start_chars = char_offset(page_.start);
+          current_end_chars = page_.at_chapter_end ? total_chars : char_offset(page_.end);
         }
 
-        const uint64_t total_chars = chapter_src_->total_chars();
         if (total_chars == 0)
           return;
 
-        auto char_offset = [&](const PagePosition& pos) {
-          if (pos.paragraph >= chapter_src_->paragraph_count())
-            return total_chars;
-          return std::min<uint64_t>(
-              total_chars, chapter_src_->char_before_para(pos.paragraph) + static_cast<uint64_t>(pos.text_offset));
-        };
+        const int current_start_x =
+            static_cast<int>(current_start_chars * static_cast<uint64_t>(W) / total_chars);
+        int current_end_x = static_cast<int>(current_end_chars * static_cast<uint64_t>(W) / total_chars);
 
-        const uint64_t page_start_chars = char_offset(page_.start);
-        const uint64_t page_end_chars = page_.at_chapter_end ? total_chars : char_offset(page_.end);
-        const int page_start_x = static_cast<int>(page_start_chars * static_cast<uint64_t>(W) / total_chars);
-        int page_end_x = static_cast<int>(page_end_chars * static_cast<uint64_t>(W) / total_chars);
-
-        // Very short pages can round to less than one display pixel. Keep a
-        // one-pixel marker whenever there is still a current page to show.
-        if (page_end_x <= page_start_x && page_start_x < W)
-          page_end_x = page_start_x + 1;
-        page_end_x = std::min(page_end_x, W);
+        // Very short pages or chapters can round to less than one display
+        // pixel. Keep a one-pixel marker for the current segment.
+        if (current_end_x <= current_start_x && current_start_x < W)
+          current_end_x = current_start_x + 1;
+        current_end_x = std::min(current_end_x, W);
 
         // A one-bit checker pattern reads as 50% gray without invoking the
         // slower grayscale display mode or changing page-turn behavior.
-        for (int x = 0; x < page_start_x; ++x)
+        for (int x = 0; x < current_start_x; ++x)
           buf.set_pixel(x, y + (x & 1), false);
 
-        if (page_end_x > page_start_x)
-          buf.fill_rect(page_start_x, y, page_end_x - page_start_x, kBarH, false);
+        if (current_end_x > current_start_x)
+          buf.fill_rect(current_start_x, y, current_end_x - current_start_x, kBarH, false);
       };
 
       // Move the bottom bar up 2px in landscape because the screen edges are
